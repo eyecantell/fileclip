@@ -49,12 +49,17 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
 
     elif sys.platform == "linux":  # Linux (requires xclip)
         uris = '\n'.join(f'file://{p}' for p in valid_paths)
-        result = subprocess.run(
-            ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list'],
-            input=uris.encode(), capture_output=True, check=True, timeout=5
-        )
-        print("Files copied to clipboard (Linux).")
-        return True
+        try:
+            result = subprocess.run(
+                ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list'],
+                input=uris.encode(), capture_output=True, check=True, timeout=5
+            )
+            print("Files copied to clipboard (Linux).")
+            return True
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Linux clipboard error: {e.stderr.decode('utf-8', errors='replace')}")
+        except FileNotFoundError:
+            raise RuntimeError("xclip not found. Install with 'sudo apt install xclip' or equivalent.")
 
     else:
         raise RuntimeError(f"Unsupported platform: {sys.platform}")

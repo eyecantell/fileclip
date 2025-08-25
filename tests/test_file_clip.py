@@ -90,14 +90,14 @@ def test_copy_files_linux_xclip_missing(temp_files, monkeypatch):
     """Test copy_files on Linux when xclip is missing."""
     with patch("subprocess.run") as mock_run:
         mock_run.side_effect = FileNotFoundError("xclip not found")
-        with pytest.raises(FileNotFoundError, match="xclip not found"):
+        with pytest.raises(RuntimeError, match="xclip not found"):
             copy_files(temp_files)
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="Non-macOS test")
 def test_copy_files_windows_linux_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on Windows/Linux."""
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"], stderr="Error".encode()
+        returncode=1, cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"], stderr=b"Error"
     )
     with pytest.raises(RuntimeError, match="Linux clipboard error: Error"):
         copy_files(temp_files)
@@ -106,9 +106,20 @@ def test_copy_files_windows_linux_subprocess_error(temp_files, mock_subprocess_r
 def test_copy_files_macos_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on macOS."""
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=["osascript"], stderr="macOS error".encode()
+        returncode=1, cmd=["osascript"], stderr=b"macOS error"
     )
     with pytest.raises(RuntimeError, match="macOS clipboard error: macOS error"):
+        copy_files(temp_files)
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific test")
+def test_copy_files_windows_subprocess_error(temp_files, mock_subprocess_run):
+    """Test copy_files with a subprocess error on Windows."""
+    paths = ','.join(f'"{p}"' for p in temp_files)
+    cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
+    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
+        returncode=1, cmd=cmd, stderr=b"Windows error"
+    )
+    with pytest.raises(RuntimeError, match="Windows clipboard error: Windows error"):
         copy_files(temp_files)
 
 def test_copy_files_large_number_of_files(tmp_path, mock_subprocess_run):
