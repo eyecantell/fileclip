@@ -1,4 +1,4 @@
-# Development Dockerfile for applydir
+# Development Dockerfile for fileclip
 # For use with VS Code Remote Development
 
 FROM python:3.10-slim AS base
@@ -25,25 +25,25 @@ USER developer
 
 # Set up Python environment
 ENV PATH=/home/developer/.local/bin:$PATH
-WORKDIR /mounted/dev/applydir
+WORKDIR /mounted/dev/fileclip
 
 # Install Python packages
-RUN python -m ensurepip --default-pip && \
-    pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir 
+RUN python -m ensurepip --default-pip 
+#&& \
+#    pip install --no-cache-dir --upgrade pip && \
+#    pip install --no-cache-dir 
 
-# Install development tools
+# Install development tools and xclip
 RUN pip install --no-cache-dir \
     build \
     GitPython \
     pdm \
+    prepdir \
     pydantic \
     pytest \
+    pytest-cov \
     ruff \
-    twine
+    twine \
+    xclip
 
-# Install dependencies using PDM in editable mode (default)
-#COPY pyproject.toml pdm.lock /mounted/dev/applydir/
-#RUN cd /mounted/dev/applydir/ && pdm install -G test -G dev
-
-RUN git config --global --add safe.directory /mounted/dev/applydir
+RUN git config --global --add safe.directory /mounted/dev/fileclip

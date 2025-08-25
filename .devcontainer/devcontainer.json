@@ -16,7 +16,7 @@
             "type": "bind"
         }
     ],
-    "postCreateCommand": "cd /mounted/dev/applydir && pdm install -G test -G dev",
+    "postCreateCommand": "cd /mounted/dev/fileclip && pdm install -G test -G dev",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -26,8 +26,8 @@
                 "be5invis.toml"
             ],
             "settings": {
-                "python.defaultInterpreterPath": "/mounted/dev/applydir/.venv/bin/python",
-                "python.pythonPath": "/mounted/dev/applydir/.venv/bin/python"
+                "python.defaultInterpreterPath": "/mounted/dev/fileclip/.venv/bin/python",
+                "python.pythonPath": "/mounted/dev/fileclip/.venv/bin/python"
             }
         }
     }
