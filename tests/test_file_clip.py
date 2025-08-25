@@ -97,16 +97,16 @@ def test_copy_files_linux_xclip_missing(temp_files, monkeypatch):
 def test_copy_files_windows_linux_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on Windows/Linux."""
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=["mock"], stderr="Error".encode()
+        returncode=1, cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"], stderr="Error".encode()
     )
-    with pytest.raises(RuntimeError, match="clipboard error: Error"):
+    with pytest.raises(RuntimeError, match="Linux clipboard error: Error"):
         copy_files(temp_files)
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS-specific test")
 def test_copy_files_macos_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on macOS."""
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=["mock"], stderr="macOS error".encode()
+        returncode=1, cmd=["osascript"], stderr="macOS error".encode()
     )
     with pytest.raises(RuntimeError, match="macOS clipboard error: macOS error"):
         copy_files(temp_files)
@@ -121,28 +121,26 @@ def test_copy_files_large_number_of_files(tmp_path, mock_subprocess_run):
     assert result is True
     mock_subprocess_run.assert_called_once()
 
-def test_cli_valid_files(temp_files, capsys, monkeypatch):
+def test_cli_valid_files(temp_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI with valid files."""
     monkeypatch.setattr(sys, "argv", ["fileclip"] + temp_files)
-    with patch("fileclip.file_clip.copy_files") as mock_copy_files:
-        mock_copy_files.return_value = True
-        main()
-        captured = capsys.readouterr()
-        assert "Files copied to clipboard" in captured.out
-        assert "Paste into your application" in captured.out
+    main()
+    captured = capsys.readouterr()
+    assert "Files copied to clipboard" in captured.out
+    assert "Paste into your application" in captured.out
+    mock_subprocess_run.assert_called_once()
 
-def test_cli_directory(temp_dir_with_files, capsys, monkeypatch):
+def test_cli_directory(temp_dir_with_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI with --dir option."""
     dir_path, expected_files = temp_dir_with_files
     monkeypatch.setattr(sys, "argv", ["fileclip", "--dir", dir_path])
-    with patch("fileclip.file_clip.copy_files") as mock_copy_files:
-        mock_copy_files.return_value = True
-        main()
-        captured = capsys.readouterr()
-        assert "Files copied to clipboard" in captured.out
-        assert mock_copy_files.called
-        called_args = mock_copy_files.call_args[0][0]
-        assert all(f in called_args for f in expected_files)
+    main()
+    captured = capsys.readouterr()
+    assert "Files copied to clipboard" in captured.out
+    assert mock_subprocess_run.called
+    called_args = mock_subprocess_run.call_args[0][0]
+    assert called_args[0] == "xclip"  # Linux-specific command
+    assert all(os.path.abspath(f) in mock_subprocess_run.call_args[1]["input"].decode() for f in expected_files)
 
 def test_cli_no_files(capsys, monkeypatch):
     """Test CLI with no files or --dir."""
@@ -160,12 +158,11 @@ def test_cli_invalid_dir(capsys, monkeypatch):
     captured = capsys.readouterr()
     assert "Error: Directory 'nonexistent_dir' does not exist" in captured.out
 
-def test_cli_copy_files_failure(temp_files, capsys, monkeypatch):
+def test_cli_copy_files_failure(temp_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI when copy_files fails."""
+    mock_subprocess_run.side_effect = RuntimeError("Test error")
     monkeypatch.setattr(sys, "argv", ["fileclip"] + temp_files)
-    with patch("fileclip.file_clip.copy_files") as mock_copy_files:
-        mock_copy_files.return_value = False
-        with pytest.raises(SystemExit):
-            main()
-        captured = capsys.readouterr()
-        assert "Failed to copy files" in captured.out
+    with pytest.raises(SystemExit):
+        main()
+    captured = capsys.readouterr()
+    assert "Failed to copy files: Test error" in captured.out

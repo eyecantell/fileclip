@@ -32,7 +32,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
     if sys.platform == "win32":  # Windows
         paths = ','.join(f'"{p}"' for p in valid_paths)
         cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
         if result.returncode != 0:
             raise RuntimeError(f"Windows clipboard error: {result.stderr}")
         print("Files copied to clipboard (Windows).")
@@ -41,7 +41,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
     elif sys.platform == "darwin":  # macOS
         files = ', '.join(f'POSIX file "{p}"' for p in valid_paths)
         cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
         if result.returncode != 0:
             raise RuntimeError(f"macOS clipboard error: {result.stderr}")
         print("Files copied to clipboard (macOS).")
@@ -51,7 +51,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         uris = '\n'.join(f'file://{p}' for p in valid_paths)
         result = subprocess.run(
             ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list'],
-            input=uris.encode(), capture_output=True, check=True
+            input=uris.encode(), capture_output=True, check=True, timeout=5
         )
         print("Files copied to clipboard (Linux).")
         return True
