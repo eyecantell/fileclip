@@ -95,7 +95,7 @@ def test_copy_files_linux_wlcopy_missing(temp_files, monkeypatch):
         mock_run.side_effect = [
             FileNotFoundError("wl-copy not found"),
             subprocess.CompletedProcess(
-                args=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"],
+                args=["xclip", "-selection", "clipboard", "-t", "text/uri-list"],
                 returncode=0, stdout="", stderr=""
             )
         ]
@@ -123,11 +123,11 @@ def test_copy_files_linux_timeout(temp_files, mock_subprocess_run, monkeypatch, 
     mock_subprocess_run.side_effect = [
         subprocess.TimeoutExpired(
             cmd=["wl-copy", "--type", "text/uri-list"],
-            timeout=15
+            timeout=5
         ),
         subprocess.TimeoutExpired(
-            cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"],
-            timeout=15
+            cmd=["xclip", "-selection", "clipboard", "-t", "text/uri-list"],
+            timeout=5
         )
     ]
     result = copy_files(temp_files)
@@ -170,7 +170,7 @@ def test_copy_files_linux_xclip_subprocess_error(temp_files, mock_subprocess_run
     monkeypatch.setenv("DISPLAY", ":0")
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
         returncode=1,
-        cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"],
+        cmd=["xclip", "-selection", "clipboard", "-t", "text/uri-list"],
         stderr=b"X11 error"
     )
     with pytest.raises(RuntimeError, match="X11 clipboard error: X11 error"):
@@ -226,7 +226,7 @@ def test_cli_directory(temp_dir_with_files, capsys, monkeypatch, mock_subprocess
     main()
     captured = capsys.readouterr()
     assert "Files copied to clipboard" in captured.out
-    assert mock_subprocess_run.called
+    mock_subprocess_run.assert_called_once()
     called_args = mock_subprocess_run.call_args[0][0]
     assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
     assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in expected_files)
@@ -239,7 +239,7 @@ def test_cli_mixed_files_and_directory(temp_files, temp_dir_with_files, capsys, 
     main()
     captured = capsys.readouterr()
     assert "Files copied to clipboard" in captured.out
-    assert mock_subprocess_run.called
+    mock_subprocess_run.assert_called_once()
     called_args = mock_subprocess_run.call_args[0][0]
     assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
     assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in temp_files + dir_files)

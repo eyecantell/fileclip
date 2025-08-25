@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import tempfile
 from typing import List, Union
 
 def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
@@ -33,7 +34,9 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         paths = ','.join(f'"{p}"' for p in valid_paths)
         cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
         print(f"Executing Windows command: {cmd}")
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=5, env=os.environ.copy()
+        )
         if result.returncode != 0:
             raise RuntimeError(f"Windows clipboard error: {result.stderr}")
         print("Files copied to clipboard (Windows).")
@@ -43,21 +46,28 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         files = ', '.join(f'POSIX file "{p}"' for p in valid_paths)
         cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
         print(f"Executing macOS command: {cmd}")
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(
+            cmd, shell=True, capture_output=True, text=True, timeout=5, env=os.environ.copy()
+        )
         if result.returncode != 0:
             raise RuntimeError(f"macOS clipboard error: {result.stderr}")
         print("Files copied to clipboard (macOS).")
         return True
 
     elif sys.platform == "linux":  # Linux (try wl-clipboard, then xclip)
+        # Format URIs with no trailing newline
         uris = '\n'.join(f'file://{p}' for p in valid_paths)
+        env = os.environ.copy()
+        if not env.get('XDG_RUNTIME_DIR'):
+            env['XDG_RUNTIME_DIR'] = f"/run/user/{os.getuid()}"
+
         if os.getenv("WAYLAND_DISPLAY"):  # Wayland environment
-            print(f"Attempting Wayland clipboard with wl-copy (WAYLAND_DISPLAY={os.getenv('WAYLAND_DISPLAY')})")
+            print(f"Attempting Wayland clipboard with wl-copy (WAYLAND_DISPLAY={os.getenv('WAYLAND_DISPLAY')}, XDG_RUNTIME_DIR={env.get('XDG_RUNTIME_DIR')})")
             cmd = ['wl-copy', '--type', 'text/uri-list']
             print(f"Executing Wayland command: {' '.join(cmd)} with input:\n{uris}")
             try:
                 result = subprocess.run(
-                    cmd, input=uris.encode(), capture_output=True, check=True, timeout=15
+                    cmd, input=uris.encode(), capture_output=True, check=True, timeout=5, env=env
                 )
                 print("Files copied to clipboard (Wayland).")
                 return True
@@ -71,11 +81,11 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
 
         if os.getenv("DISPLAY"):  # X11 environment
             print(f"Attempting X11 clipboard with xclip (DISPLAY={os.getenv('DISPLAY')})")
-            cmd = ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list']
+            cmd = ['xclip', '-selection', 'clipboard', '-t', 'text/uri-list']
             print(f"Executing X11 command: {' '.join(cmd)} with input:\n{uris}")
             try:
                 result = subprocess.run(
-                    cmd, input=uris.encode(), capture_output=True, check=True, timeout=15
+                    cmd, input=uris.encode(), capture_output=True, check=True, timeout=5, env=env
                 )
                 print("Files copied to clipboard (X11).")
                 return True
