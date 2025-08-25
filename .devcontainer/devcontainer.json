@@ -1,0 +1,34 @@
+{
+    "name": "fileclip dev env",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "mounts": [
+        {
+            "type": "bind",
+            "source": "${localEnv:HOME}${localEnv:USERPROFILE}/dev",
+            "target": "/mounted/dev"
+        },
+        {
+            "source": "${localEnv:HOME}${localEnv:USERPROFILE}/stuff_for_containers_home",
+            "target": "/mounted/stuff_for_containers_home",
+            "type": "bind"
+        }
+    ],
+    "postCreateCommand": "cd /mounted/dev/applydir && pdm install -G test -G dev",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.vscode-docker",
+                "ms-python.python",
+                "github.vscode-github-actions",
+                "be5invis.toml"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/mounted/dev/applydir/.venv/bin/python",
+                "python.pythonPath": "/mounted/dev/applydir/.venv/bin/python"
+            }
+        }
+    }
+}
