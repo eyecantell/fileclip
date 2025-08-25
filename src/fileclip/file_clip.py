@@ -29,42 +29,32 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         print("No valid files to copy.")
         return False
 
-    try:
-        if sys.platform == "win32":  # Windows
-            paths = ','.join(f'"{p}"' for p in valid_paths)
-            cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise RuntimeError(f"Windows clipboard error: {result.stderr}")
-            print("Files copied to clipboard (Windows).")
-            return True
+    if sys.platform == "win32":  # Windows
+        paths = ','.join(f'"{p}"' for p in valid_paths)
+        cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Windows clipboard error: {result.stderr}")
+        print("Files copied to clipboard (Windows).")
+        return True
 
-        elif sys.platform == "darwin":  # macOS
-            files = ', '.join(f'POSIX file "{p}"' for p in valid_paths)
-            cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise RuntimeError(f"macOS clipboard error: {result.stderr}")
-            print("Files copied to clipboard (macOS).")
-            return True
+    elif sys.platform == "darwin":  # macOS
+        files = ', '.join(f'POSIX file "{p}"' for p in valid_paths)
+        cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"macOS clipboard error: {result.stderr}")
+        print("Files copied to clipboard (macOS).")
+        return True
 
-        elif sys.platform == "linux":  # Linux (requires xclip)
-            try:
-                uris = '\n'.join(f'file://{p}' for p in valid_paths)
-                result = subprocess.run(
-                    ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list'],
-                    input=uris.encode(), capture_output=True, check=True
-                )
-                print("Files copied to clipboard (Linux).")
-                return True
-            except FileNotFoundError:
-                raise RuntimeError("xclip not found. Install with 'sudo apt install xclip' or equivalent.")
-            except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"Linux clipboard error: {e.stderr.decode()}")
+    elif sys.platform == "linux":  # Linux (requires xclip)
+        uris = '\n'.join(f'file://{p}' for p in valid_paths)
+        result = subprocess.run(
+            ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list'],
+            input=uris.encode(), capture_output=True, check=True
+        )
+        print("Files copied to clipboard (Linux).")
+        return True
 
-        else:
-            raise RuntimeError(f"Unsupported platform: {sys.platform}")
-
-    except Exception as e:
-        print(f"Error copying files to clipboard: {e}")
-        return False
+    else:
+        raise RuntimeError(f"Unsupported platform: {sys.platform}")

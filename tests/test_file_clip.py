@@ -77,18 +77,20 @@ def test_copy_files_directory_in_list(temp_files, tmp_path):
     with pytest.raises(FileNotFoundError, match="File not found or not a file"):
         copy_files(invalid_files)
 
-def test_copy_files_unsupported_platform(monkeypatch):
+def test_copy_files_unsupported_platform(monkeypatch, tmp_path):
     """Test copy_files on an unsupported platform."""
+    file = tmp_path / "test.txt"
+    file.write_text("Test content")
     monkeypatch.setattr(sys, "platform", "unsupported")
     with pytest.raises(RuntimeError, match="Unsupported platform: unsupported"):
-        copy_files(["test.txt"])
+        copy_files([str(file)])
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
 def test_copy_files_linux_xclip_missing(temp_files, monkeypatch):
     """Test copy_files on Linux when xclip is missing."""
     with patch("subprocess.run") as mock_run:
         mock_run.side_effect = FileNotFoundError("xclip not found")
-        with pytest.raises(RuntimeError, match="xclip not found.*"):
+        with pytest.raises(FileNotFoundError, match="xclip not found"):
             copy_files(temp_files)
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="Non-macOS test")
