@@ -9,32 +9,33 @@ def main():
         description="Copy files to the system clipboard for pasting as file references (e.g., into Grok's UI)."
     )
     parser.add_argument(
-        "files",
+        "paths",
         nargs="*",
-        help="Paths to files to copy to clipboard."
-    )
-    parser.add_argument(
-        "--dir",
-        help="Directory path to copy all files from (recursive).",
-        default=None
+        help="Paths to files or directories (directories are processed recursively)."
     )
 
     args = parser.parse_args()
 
     # Collect file paths
-    file_paths = args.files or []
+    file_paths = []
     
-    # If --dir is provided, add all files from the directory
-    if args.dir:
-        if not os.path.isdir(args.dir):
-            print(f"Error: Directory '{args.dir}' does not exist.")
+    # Process each path: files are added directly, directories are walked recursively
+    for path in args.paths:
+        if not os.path.exists(path):
+            print(f"Error: Path '{path}' does not exist.")
             sys.exit(1)
-        for root, _, files in os.walk(args.dir):
-            for file in files:
-                file_paths.append(os.path.join(root, file))
+        if os.path.isdir(path):
+            for root, _, files in os.walk(path):
+                for file in files:
+                    file_paths.append(os.path.join(root, file))
+        elif os.path.isfile(path):
+            file_paths.append(path)
+        else:
+            print(f"Error: Path '{path}' is neither a file nor a directory.")
+            sys.exit(1)
 
     if not file_paths:
-        print("Error: No files specified. Use file paths or --dir.")
+        print("Error: No files specified or found in provided paths.")
         parser.print_help()
         sys.exit(1)
 

@@ -39,7 +39,7 @@ def temp_dir_with_files(tmp_path):
     file3.write_text("File 3 content")
     return str(dir_path), [str(file1), str(file2), str(file3)]
 
-def test_copy_files_valid_files(temp_files, mock_subprocess_run):
+def test_copy_files_valid_files(temp_files, mock_subprocess_run, monkeypatch):
     """Test copy_files with valid files."""
     result = copy_files(temp_files)
     assert result is True
@@ -55,8 +55,10 @@ def test_copy_files_valid_files(temp_files, mock_subprocess_run):
         assert all(os.path.abspath(f) in cmd for f in temp_files)
     elif sys.platform == "linux":
         mock_subprocess_run.assert_called_once()
-        assert mock_subprocess_run.call_args[0][0][0] == "xclip"
-        assert "text/uri-list" in mock_subprocess_run.call_args[0][0]
+        cmd = mock_subprocess_run.call_args[0][0]
+        assert cmd[0] in ["wl-copy", "xclip"]
+        assert "text/uri-list" in cmd
+        assert mock_subprocess_run.call_args[1]["input"].decode().startswith("file://")
 
 def test_copy_files_invalid_file(temp_files):
     """Test copy_files with an invalid file."""
@@ -86,20 +88,92 @@ def test_copy_files_unsupported_platform(monkeypatch, tmp_path):
         copy_files([str(file)])
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
-def test_copy_files_linux_xclip_missing(temp_files, monkeypatch):
-    """Test copy_files on Linux when xclip is missing."""
+def test_copy_files_linux_wlcopy_missing(temp_files, monkeypatch):
+    """Test copy_files on Linux when wl-copy is missing but xclip is available."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     with patch("subprocess.run") as mock_run:
-        mock_run.side_effect = FileNotFoundError("xclip not found")
+        mock_run.side_effect = [
+            FileNotFoundError("wl-copy not found"),
+            subprocess.CompletedProcess(
+                args=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"],
+                returncode=0, stdout="", stderr=""
+            )
+        ]
+        result = copy_files(temp_files)
+        assert result is True
+        assert mock_run.call_count == 2
+        assert mock_run.call_args_list[0][0][0][0] == "wl-copy"
+        assert mock_run.call_args_list[1][0][0][0] == "xclip"
+        assert mock_run.call_args_list[1][1]["input"].decode().startswith("file://")
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
+def test_copy_files_linux_xclip_missing(temp_files, monkeypatch):
+    """Test copy_files on Linux when both wl-copy and xclip are missing."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    with patch("subprocess.run") as mock_run:
+        mock_run.side_effect = FileNotFoundError("wl-copy not found")
         with pytest.raises(RuntimeError, match="xclip not found"):
             copy_files(temp_files)
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Non-macOS test")
-def test_copy_files_windows_linux_subprocess_error(temp_files, mock_subprocess_run):
-    """Test copy_files with a subprocess error on Windows/Linux."""
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
+def test_copy_files_linux_timeout(temp_files, mock_subprocess_run, monkeypatch, capsys):
+    """Test copy_files on Linux when both clipboard operations time out."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setenv("DISPLAY", ":0")
+    mock_subprocess_run.side_effect = [
+        subprocess.TimeoutExpired(
+            cmd=["wl-copy", "--type", "text/uri-list"],
+            timeout=15
+        ),
+        subprocess.TimeoutExpired(
+            cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"],
+            timeout=15
+        )
+    ]
+    result = copy_files(temp_files)
+    assert result is False
+    captured = capsys.readouterr()
+    assert "Wayland clipboard operation timed out" in captured.out
+    assert "X11 clipboard operation timed out" in captured.out
+    assert "No functional display server detected" in captured.out
+    assert "File URIs (copy manually):" in captured.out
+    assert all(f"file://{os.path.abspath(f)}" in captured.out for f in temp_files)
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
+def test_copy_files_linux_no_display(temp_files, monkeypatch, capsys):
+    """Test copy_files on Linux with no display server."""
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    result = copy_files(temp_files)
+    assert result is False
+    captured = capsys.readouterr()
+    assert "No functional display server detected" in captured.out
+    assert "File URIs (copy manually):" in captured.out
+    assert all(f"file://{os.path.abspath(f)}" in captured.out for f in temp_files)
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
+def test_copy_files_linux_wlcopy_subprocess_error(temp_files, mock_subprocess_run, monkeypatch):
+    """Test copy_files with a subprocess error on Wayland."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"], stderr=b"Error"
+        returncode=1,
+        cmd=["wl-copy", "--type", "text/uri-list"],
+        stderr=b"Wayland error"
     )
-    with pytest.raises(RuntimeError, match="Linux clipboard error: Error"):
+    with pytest.raises(RuntimeError, match="Wayland clipboard error: Wayland error"):
+        copy_files(temp_files)
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
+def test_copy_files_linux_xclip_subprocess_error(temp_files, mock_subprocess_run, monkeypatch):
+    """Test copy_files with a subprocess error on X11."""
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setenv("DISPLAY", ":0")
+    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
+        returncode=1,
+        cmd=["xclip", "-i", "-selection", "clipboard", "-t", "text/uri-list"],
+        stderr=b"X11 error"
+    )
+    with pytest.raises(RuntimeError, match="X11 clipboard error: X11 error"):
         copy_files(temp_files)
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS-specific test")
@@ -131,6 +205,8 @@ def test_copy_files_large_number_of_files(tmp_path, mock_subprocess_run):
     result = copy_files(files)
     assert result is True
     mock_subprocess_run.assert_called_once()
+    if sys.platform == "linux":
+        assert mock_subprocess_run.call_args[1]["input"].decode().startswith("file://")
 
 def test_cli_valid_files(temp_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI with valid files."""
@@ -140,34 +216,49 @@ def test_cli_valid_files(temp_files, capsys, monkeypatch, mock_subprocess_run):
     assert "Files copied to clipboard" in captured.out
     assert "Paste into your application" in captured.out
     mock_subprocess_run.assert_called_once()
+    if sys.platform == "linux":
+        assert mock_subprocess_run.call_args[1]["input"].decode().startswith("file://")
 
 def test_cli_directory(temp_dir_with_files, capsys, monkeypatch, mock_subprocess_run):
-    """Test CLI with --dir option."""
+    """Test CLI with a directory path."""
     dir_path, expected_files = temp_dir_with_files
-    monkeypatch.setattr(sys, "argv", ["fileclip", "--dir", dir_path])
+    monkeypatch.setattr(sys, "argv", ["fileclip", dir_path])
     main()
     captured = capsys.readouterr()
     assert "Files copied to clipboard" in captured.out
     assert mock_subprocess_run.called
     called_args = mock_subprocess_run.call_args[0][0]
-    assert called_args[0] == "xclip"  # Linux-specific command
-    assert all(os.path.abspath(f) in mock_subprocess_run.call_args[1]["input"].decode() for f in expected_files)
+    assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
+    assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in expected_files)
 
-def test_cli_no_files(capsys, monkeypatch):
-    """Test CLI with no files or --dir."""
+def test_cli_mixed_files_and_directory(temp_files, temp_dir_with_files, capsys, monkeypatch, mock_subprocess_run):
+    """Test CLI with a mix of file and directory paths."""
+    dir_path, dir_files = temp_dir_with_files
+    mixed_paths = temp_files + [dir_path]
+    monkeypatch.setattr(sys, "argv", ["fileclip"] + mixed_paths)
+    main()
+    captured = capsys.readouterr()
+    assert "Files copied to clipboard" in captured.out
+    assert mock_subprocess_run.called
+    called_args = mock_subprocess_run.call_args[0][0]
+    assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
+    assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in temp_files + dir_files)
+
+def test_cli_no_paths(capsys, monkeypatch):
+    """Test CLI with no paths."""
     monkeypatch.setattr(sys, "argv", ["fileclip"])
     with pytest.raises(SystemExit):
         main()
     captured = capsys.readouterr()
-    assert "Error: No files specified" in captured.out
+    assert "Error: No files specified or found in provided paths" in captured.out
 
-def test_cli_invalid_dir(capsys, monkeypatch):
-    """Test CLI with invalid --dir."""
-    monkeypatch.setattr(sys, "argv", ["fileclip", "--dir", "nonexistent_dir"])
+def test_cli_invalid_path(capsys, monkeypatch):
+    """Test CLI with an invalid path."""
+    monkeypatch.setattr(sys, "argv", ["fileclip", "nonexistent_path"])
     with pytest.raises(SystemExit):
         main()
     captured = capsys.readouterr()
-    assert "Error: Directory 'nonexistent_dir' does not exist" in captured.out
+    assert "Error: Path 'nonexistent_path' does not exist" in captured.out
 
 def test_cli_copy_files_failure(temp_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI when copy_files fails."""

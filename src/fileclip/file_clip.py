@@ -32,7 +32,8 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
     if sys.platform == "win32":  # Windows
         paths = ','.join(f'"{p}"' for p in valid_paths)
         cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+        print(f"Executing Windows command: {cmd}")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
         if result.returncode != 0:
             raise RuntimeError(f"Windows clipboard error: {result.stderr}")
         print("Files copied to clipboard (Windows).")
@@ -41,25 +42,56 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
     elif sys.platform == "darwin":  # macOS
         files = ', '.join(f'POSIX file "{p}"' for p in valid_paths)
         cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+        print(f"Executing macOS command: {cmd}")
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
         if result.returncode != 0:
             raise RuntimeError(f"macOS clipboard error: {result.stderr}")
         print("Files copied to clipboard (macOS).")
         return True
 
-    elif sys.platform == "linux":  # Linux (requires xclip)
+    elif sys.platform == "linux":  # Linux (try wl-clipboard, then xclip)
         uris = '\n'.join(f'file://{p}' for p in valid_paths)
-        try:
-            result = subprocess.run(
-                ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list'],
-                input=uris.encode(), capture_output=True, check=True, timeout=5
-            )
-            print("Files copied to clipboard (Linux).")
-            return True
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Linux clipboard error: {e.stderr.decode('utf-8', errors='replace')}")
-        except FileNotFoundError:
-            raise RuntimeError("xclip not found. Install with 'sudo apt install xclip' or equivalent.")
+        if os.getenv("WAYLAND_DISPLAY"):  # Wayland environment
+            print(f"Attempting Wayland clipboard with wl-copy (WAYLAND_DISPLAY={os.getenv('WAYLAND_DISPLAY')})")
+            cmd = ['wl-copy', '--type', 'text/uri-list']
+            print(f"Executing Wayland command: {' '.join(cmd)} with input:\n{uris}")
+            try:
+                result = subprocess.run(
+                    cmd, input=uris.encode(), capture_output=True, check=True, timeout=15
+                )
+                print("Files copied to clipboard (Wayland).")
+                return True
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Wayland clipboard error: {e.stderr.decode('utf-8', errors='replace')}")
+            except FileNotFoundError:
+                print("wl-clipboard not found, falling back to xclip.")
+            except subprocess.TimeoutExpired as e:
+                print(f"Wayland clipboard operation timed out: cmd={e.cmd}, timeout={e.timeout}, stdout={e.stdout.decode('utf-8', errors='replace') if e.stdout else 'None'}, stderr={e.stderr.decode('utf-8', errors='replace') if e.stderr else 'None'}")
+                print("Falling back to xclip.")
+
+        if os.getenv("DISPLAY"):  # X11 environment
+            print(f"Attempting X11 clipboard with xclip (DISPLAY={os.getenv('DISPLAY')})")
+            cmd = ['xclip', '-i', '-selection', 'clipboard', '-t', 'text/uri-list']
+            print(f"Executing X11 command: {' '.join(cmd)} with input:\n{uris}")
+            try:
+                result = subprocess.run(
+                    cmd, input=uris.encode(), capture_output=True, check=True, timeout=15
+                )
+                print("Files copied to clipboard (X11).")
+                return True
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"X11 clipboard error: {e.stderr.decode('utf-8', errors='replace')}")
+            except FileNotFoundError:
+                raise RuntimeError("xclip not found. Install with 'sudo apt install xclip' or equivalent.")
+            except subprocess.TimeoutExpired as e:
+                print(f"X11 clipboard operation timed out: cmd={e.cmd}, timeout={e.timeout}, stdout={e.stdout.decode('utf-8', errors='replace') if e.stdout else 'None'}, stderr={e.stderr.decode('utf-8', errors='replace') if e.stderr else 'None'}")
+
+        # Fallback for non-GUI environments
+        print("No functional display server detected (WAYLAND_DISPLAY or DISPLAY set but unresponsive).")
+        print("File URIs (copy manually):")
+        for uri in uris.split('\n'):
+            print(uri)
+        return False
 
     else:
         raise RuntimeError(f"Unsupported platform: {sys.platform}")

@@ -10,9 +10,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     curl \
     git \
+    procps \
     sudo \
     tree \
+    xclip \
     vim \
+    wl-clipboard \
     && rm -rf /var/lib/apt/lists/*
 
 # Create the developer user and set up permissions
@@ -43,7 +46,6 @@ RUN pip install --no-cache-dir \
     pytest \
     pytest-cov \
     ruff \
-    twine \
-    xclip
+    twine
 
 RUN git config --global --add safe.directory /mounted/dev/fileclip
