@@ -4,6 +4,12 @@
 [![Downloads](https://pepy.tech/badge/fileclip)](https://pepy.tech/project/fileclip)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+[![CI](https://github.com/eyecantell/fileclip/actions/workflows/ci.yml/badge.svg)](https://github.com/eyecantell/fileclip/actions/runs/16384663620)
+[![PyPI version](https://badge.fury.io/py/fileclip.svg)](https://badge.fury.io/py/fileclip)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Downloads](https://pepy.tech/badge/fileclip)](https://pepy.tech/project/fileclip)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 # Fileclip
 
 Fileclip is a command-line tool for copying file references to the system clipboard, enabling seamless file copy/paste operations across supported platforms. It supports copying multiple files or directories, making it easy to paste files into file managers (e.g., Windows File Explorer, Nautilus, Dolphin) or other applications that support file references.
@@ -14,6 +20,7 @@ Fileclip is a command-line tool for copying file references to the system clipbo
 - **File and Directory Support**: Copies references to individual files or all files within directories (non-recursive by default).
 - **Clipboard Integration**: Uses native clipboard commands to copy file references or URIs, depending on the platform.
 - **Fallback for WSL/Containers**: In WSL or VS Code containers, falls back to copying `file://` URIs as text to the Windows clipboard for use in Windows applications.
+- **Container Support**: In VS Code containers, communicates with a Windows host service to copy native Windows file paths to the clipboard.
 
 ## Installation
 
@@ -36,6 +43,15 @@ Fileclip is built with Python and managed using [PDM](https://pdm-project.org/).
    ```bash
    sudo apt update && sudo apt install wl-clipboard xclip
    ```
+
+4. **Container Setup (Optional)**:
+   For VS Code container usage, add a mount to `devcontainer.json` to share a directory between the container and Windows host:
+   ```json
+   "mounts": [
+       "source=C:/Temp/fileclip,target=/tmp/fileclip,type=bind"
+   ]
+   ```
+   On the Windows host, run the `fileclip-host.py` service (see [Container Support](#container-support)).
 
 ## Usage
 
@@ -69,7 +85,7 @@ pdm run fileclip path/to/file1.txt path/to/dir
   ```
   Output (Windows):
   ```
-  Executing Windows command: powershell.exe -Command "Set-Clipboard -Path "C:\path\to\test_dir\file1.txt","C:\path\to\test_dir\file2.txt""
+  Executing Windows command: powershell.exe -Command "Set-Clipboard -Path 'C:\path\to\test_dir\file1.txt','C:\path\to\test_dir\file2.txt'"
   Files copied to clipboard (Windows).
   ```
 
@@ -120,6 +136,70 @@ pdm run fileclip path/to/file1.txt path/to/dir
   ```
   Paste into Windows File Explorer’s address bar or a browser to access the file.
 
+## Container Support
+
+For VS Code containers, `fileclip` can communicate with a Windows host service to copy native Windows file paths to the clipboard, enabling seamless pasting into Windows File Explorer or other applications. This uses a file-based communication mechanism.
+
+### Setup
+1. **Host Service**:
+   - On the Windows host, save the following as `fileclip-host.py`:
+     ```python
+     import json
+     import time
+     import subprocess
+     from pathlib import Path
+
+     POLL_FILE = Path(r'C:\Temp\fileclip\clipboard.json')
+     while True:
+         if POLL_FILE.exists():
+             with open(POLL_FILE, 'r') as f:
+                 data = json.load(f)
+             paths = data.get('paths', [])
+             if paths:
+                 cmd = f"powershell.exe -Command \"Set-Clipboard -Path '{','.join(paths)}'\""
+                 subprocess.run(cmd, shell=True, check=True)
+                 print(f"Copied {len(paths)} files to clipboard.")
+             POLL_FILE.unlink()  # Acknowledge
+         time.sleep(1)  # Poll interval
+     ```
+   - Run it manually in a PowerShell terminal:
+     ```powershell
+     python fileclip-host.py
+     ```
+   - Optionally, use Windows Task Scheduler to start it on login.
+
+2. **Container Configuration**:
+   - Ensure the container has a shared directory by adding to `devcontainer.json`:
+     ```json
+     "mounts": [
+         "source=C:/Temp/fileclip,target=/tmp/fileclip,type=bind"
+     ]
+     ```
+   - Set environment variables for path translation (optional, in `devcontainer.json` or shell):
+     ```json
+     "containerEnv": {
+         "FILECLIP_HOST_WORKSPACE": "C:\\path\\to\\workspace",
+         "FILECLIP_CONTAINER_WORKSPACE": "/workspaces/project"
+     }
+     ```
+
+3. **Usage in Container**:
+   - Run `fileclip` as usual:
+     ```bash
+     pdm run fileclip /workspaces/project/test.txt
+     ```
+   - `fileclip` translates container paths (e.g., `/workspaces/project/test.txt`) to host paths (e.g., `C:\path\to\workspace\test.txt`), writes them to `/tmp/fileclip/clipboard.json`, and the host service copies them to the Windows clipboard.
+   - If the host service isn’t running, `fileclip` falls back to copying `file://` URIs as text and prints:
+     ```
+     Host service not detected. Copied file:// URIs to clipboard as text.
+     ```
+     Paste these URIs into Windows File Explorer’s address bar.
+
+### Notes
+- The host service must be started manually on Windows. Containers cannot directly start host processes due to isolation.
+- Ensure the mounted directory (e.g., `C:\Temp\fileclip`) exists on the host before starting the container.
+- Path translation requires correct `FILECLIP_HOST_WORKSPACE` and `FILECLIP_CONTAINER_WORKSPACE` settings. If unset, `fileclip` will attempt to infer paths or fall back to URIs.
+
 ## Troubleshooting
 
 - **Linux Clipboard Issues**:
@@ -150,6 +230,18 @@ pdm run fileclip path/to/file1.txt path/to/dir
     ```
     Paste in Windows to confirm.
 
+- **Container Host Service Issues**:
+  - Ensure `fileclip-host.py` is running on the Windows host.
+  - Verify the shared directory exists and is writable:
+    ```bash
+    ls -l /tmp/fileclip
+    ```
+  - Check path translation:
+    ```bash
+    env | grep FILECLIP
+    ```
+  - If paths fail to copy, inspect `/tmp/fileclip/clipboard.json` for errors.
+
 - **Timeouts**:
   - If `wl-copy` or `xclip` time out, check the debug output in `fileclip` and run the logged command manually.
   - Increase timeout in `file_clip.py` (e.g., `timeout=10`).
@@ -174,13 +266,14 @@ pdm run fileclip path/to/file1.txt path/to/dir
   │   └── test_file_clip.py
   ├── pyproject.toml
   ├── README.md
+  ├── fileclip-host.py
   └── .devcontainer/
       ├── Dockerfile
       └── devcontainer.json
   ```
 
 - **Dependencies**:
-  - Python: `pathlib`, `subprocess`, `sys`
+  - Python: `pathlib`, `subprocess`, `sys`, `json`
   - Dev: `pytest`, `pytest-cov`
 
 ## Future Enhancements
@@ -188,7 +281,8 @@ pdm run fileclip path/to/file1.txt path/to/dir
 - Add `--include`/`--exclude` flags for file filtering.
 - Support recursive directory copying.
 - Integrate with `applydir` for advanced file operations.
-- Add CI workflow for multi-platform testing.
+- Add CI workflow for multi-platform testing, including container scenarios.
+- Explore HTTP-based host communication for faster response.
 
 ## License
 
