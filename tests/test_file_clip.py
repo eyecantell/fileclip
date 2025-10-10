@@ -296,3 +296,21 @@ def test_copy_files_linux_mocked(temp_files, mock_subprocess_run, monkeypatch):
     mock_subprocess_run.assert_called_once()
     assert mock_subprocess_run.call_args[0][0][0] in ["wl-copy", "xclip"]
     assert mock_subprocess_run.call_args[1]["input"].decode().startswith("file://")
+
+def test_copy_files_macos_mocked(temp_files, mock_subprocess_run, monkeypatch):
+    """Test copy_files on macOS by mocking platform."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    result = copy_files(temp_files)
+    assert result is True
+    mock_subprocess_run.assert_called_once()
+    assert mock_subprocess_run.call_args[0][0].startswith("osascript")
+    assert all(os.path.abspath(f) in mock_subprocess_run.call_args[0][0] for f in temp_files)
+
+def test_copy_files_windows_mocked(temp_files, mock_subprocess_run, monkeypatch):
+    """Test copy_files on Windows by mocking platform."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    result = copy_files(temp_files)
+    assert result is True
+    mock_subprocess_run.assert_called_once()
+    assert "powershell.exe" in mock_subprocess_run.call_args[0][0]
+    assert all(os.path.abspath(f) in mock_subprocess_run.call_args[0][0] for f in temp_files)
