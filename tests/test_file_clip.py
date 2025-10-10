@@ -188,8 +188,10 @@ def test_copy_files_macos_subprocess_error(temp_files, mock_subprocess_run):
     cmd = 'osascript -e \'tell app "Finder" to set the clipboard to {'
     cmd += ', '.join(f'POSIX file "{p}"' for p in temp_files)
     cmd += '}\''
-    mock_subprocess_run.return_value = subprocess.CompletedProcess(
-        args=cmd, returncode=1, stdout="", stderr="macOS error"
+    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
+        returncode=1,
+        cmd=cmd,
+        stderr="macOS error"
     )
     with pytest.raises(RuntimeError, match="macOS clipboard error: macOS error"):
         copy_files(temp_files)
