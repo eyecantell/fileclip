@@ -201,8 +201,10 @@ def test_copy_files_windows_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on Windows."""
     paths = ','.join(f'"{p}"' for p in temp_files)
     cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
-    mock_subprocess_run.return_value = subprocess.CompletedProcess(
-        args=cmd, returncode=1, stdout="", stderr="Windows error"
+    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
+        returncode=1,
+        cmd=cmd,
+        stderr="Windows error"
     )
     with pytest.raises(RuntimeError, match="Windows clipboard error: Windows error"):
         copy_files(temp_files)

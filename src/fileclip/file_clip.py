@@ -59,7 +59,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         # Format URIs with no trailing newline
         uris = '\n'.join(f'file://{p}' for p in valid_paths)
         env = os.environ.copy()
-        if not env.get('XDG_RUNTIME_DIR'):
+        if not env.get('XDG_RUNTIME_DIR') and hasattr(os, 'getuid'):
             env['XDG_RUNTIME_DIR'] = f"/run/user/{os.getuid()}"
 
         if os.getenv("WAYLAND_DISPLAY"):  # Wayland environment
