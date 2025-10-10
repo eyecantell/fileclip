@@ -1,7 +1,6 @@
 import os
 import subprocess
 import sys
-import tempfile
 from typing import List, Union
 
 def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
@@ -35,15 +34,11 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
         print(f"Executing Windows command: {cmd}")
         try:
-            result = subprocess.run(
+            subprocess.run(
                 cmd, shell=True, capture_output=True, text=True, timeout=5, check=True, env=os.environ.copy()
             )
-            print(f"Executing Windows command: {cmd}")
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Windows clipboard error: {e.stderr}")
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"Windows clipboard error: {result.stderr}")
         print("Files copied to clipboard (Windows).")
         return True
 
@@ -52,14 +47,11 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
         print(f"Executing macOS command: {cmd}")
         try:
-            result = subprocess.run(
+            subprocess.run(
                 cmd, shell=True, capture_output=True, text=True, timeout=5, check=True, env=os.environ.copy()
             )
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"macOS clipboard error: {e.stderr}")
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"macOS clipboard error: {result.stderr}")
         print("Files copied to clipboard (macOS).")
         return True
 
@@ -75,7 +67,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
             cmd = ['wl-copy', '--type', 'text/uri-list']
             print(f"Executing Wayland command: {' '.join(cmd)} with input:\n{uris}")
             try:
-                result = subprocess.run(
+                subprocess.run(
                     cmd, input=uris.encode(), capture_output=True, check=True, timeout=5, env=env
                 )
                 print("Files copied to clipboard (Wayland).")
@@ -93,7 +85,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
             cmd = ['xclip', '-selection', 'clipboard', '-t', 'text/uri-list']
             print(f"Executing X11 command: {' '.join(cmd)} with input:\n{uris}")
             try:
-                result = subprocess.run(
+                subprocess.run(
                     cmd, input=uris.encode(), capture_output=True, check=True, timeout=5, env=env
                 )
                 print("Files copied to clipboard (X11).")

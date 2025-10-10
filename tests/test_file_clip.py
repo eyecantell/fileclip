@@ -41,23 +41,21 @@ def temp_dir_with_files(tmp_path):
 
 def test_copy_files_valid_files(temp_files, mock_subprocess_run, monkeypatch):
     """Test copy_files with valid files."""
+    if sys.platform == "linux":
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     result = copy_files(temp_files)
     assert result is True
+    mock_subprocess_run.assert_called_once()
+    called_args = mock_subprocess_run.call_args[0][0]
     if sys.platform == "win32":
-        mock_subprocess_run.assert_called_once()
-        cmd = mock_subprocess_run.call_args[0][0]
-        assert "powershell.exe" in cmd
-        assert all(os.path.abspath(f) in cmd for f in temp_files)
+        assert "powershell.exe" in called_args
+        assert all(os.path.abspath(f) in called_args for f in temp_files)
     elif sys.platform == "darwin":
-        mock_subprocess_run.assert_called_once()
-        cmd = mock_subprocess_run.call_args[0][0]
-        assert "osascript" in cmd
-        assert all(os.path.abspath(f) in cmd for f in temp_files)
+        assert called_args.startswith("osascript")
+        assert all(os.path.abspath(f) in called_args for f in temp_files)
     elif sys.platform == "linux":
-        mock_subprocess_run.assert_called_once()
-        cmd = mock_subprocess_run.call_args[0][0]
-        assert cmd[0] in ["wl-copy", "xclip"]
-        assert "text/uri-list" in cmd
+        assert called_args[0] in ["wl-copy", "xclip"]
+        assert "text/uri-list" in called_args
         assert mock_subprocess_run.call_args[1]["input"].decode().startswith("file://")
 
 def test_copy_files_invalid_file(temp_files):
@@ -91,6 +89,7 @@ def test_copy_files_unsupported_platform(monkeypatch, tmp_path):
 def test_copy_files_linux_wlcopy_missing(temp_files, monkeypatch):
     """Test copy_files on Linux when wl-copy is missing but xclip is available."""
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setenv("DISPLAY", ":0")
     with patch("subprocess.run") as mock_run:
         mock_run.side_effect = [
             FileNotFoundError("wl-copy not found"),
@@ -110,10 +109,17 @@ def test_copy_files_linux_wlcopy_missing(temp_files, monkeypatch):
 def test_copy_files_linux_xclip_missing(temp_files, monkeypatch):
     """Test copy_files on Linux when both wl-copy and xclip are missing."""
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setenv("DISPLAY", ":0")
     with patch("subprocess.run") as mock_run:
-        mock_run.side_effect = FileNotFoundError("wl-copy not found")
+        mock_run.side_effect = [
+            FileNotFoundError("wl-copy not found"),
+            FileNotFoundError("xclip not found")
+        ]
         with pytest.raises(RuntimeError, match="xclip not found"):
             copy_files(temp_files)
+        assert mock_run.call_count == 2
+        assert mock_run.call_args_list[0][0][0][0] == "wl-copy"
+        assert mock_run.call_args_list[1][0][0][0] == "xclip"
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux-specific test")
 def test_copy_files_linux_timeout(temp_files, mock_subprocess_run, monkeypatch, capsys):
@@ -179,7 +185,6 @@ def test_copy_files_linux_xclip_subprocess_error(temp_files, mock_subprocess_run
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS-specific test")
 def test_copy_files_macos_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on macOS."""
-    # Simulate the actual osascript command
     cmd = 'osascript -e \'tell app "Finder" to set the clipboard to {'
     cmd += ', '.join(f'POSIX file "{p}"' for p in temp_files)
     cmd += '}\''
@@ -200,8 +205,10 @@ def test_copy_files_windows_subprocess_error(temp_files, mock_subprocess_run):
     with pytest.raises(RuntimeError, match="Windows clipboard error: Windows error"):
         copy_files(temp_files)
 
-def test_copy_files_large_number_of_files(tmp_path, mock_subprocess_run):
+def test_copy_files_large_number_of_files(tmp_path, mock_subprocess_run, monkeypatch):
     """Test copy_files with a large number of files."""
+    if sys.platform == "linux":
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     files = [str(tmp_path / f"file{i}.txt") for i in range(100)]
     for f in files:
         with open(f, "w") as fp:
@@ -214,6 +221,8 @@ def test_copy_files_large_number_of_files(tmp_path, mock_subprocess_run):
 
 def test_cli_valid_files(temp_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI with valid files."""
+    if sys.platform == "linux":
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     monkeypatch.setattr(sys, "argv", ["fileclip"] + temp_files)
     main()
     captured = capsys.readouterr()
@@ -225,6 +234,8 @@ def test_cli_valid_files(temp_files, capsys, monkeypatch, mock_subprocess_run):
 
 def test_cli_directory(temp_dir_with_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI with a directory path."""
+    if sys.platform == "linux":
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     dir_path, expected_files = temp_dir_with_files
     monkeypatch.setattr(sys, "argv", ["fileclip", dir_path])
     main()
@@ -233,17 +244,19 @@ def test_cli_directory(temp_dir_with_files, capsys, monkeypatch, mock_subprocess
     mock_subprocess_run.assert_called_once()
     called_args = mock_subprocess_run.call_args[0][0]
     if sys.platform == "linux":
-        assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
+        assert called_args[0] in ["wl-copy", "xclip"]
         assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in expected_files)
     elif sys.platform == "darwin":
-        assert called_args.startswith("osascript")  # macOS-specific command
+        assert called_args.startswith("osascript")
         assert all(os.path.abspath(f) in called_args for f in expected_files)
     elif sys.platform == "win32":
-        assert "powershell.exe" in called_args  # Windows-specific command
+        assert "powershell.exe" in called_args
         assert all(os.path.abspath(f) in called_args for f in expected_files)
 
 def test_cli_mixed_files_and_directory(temp_files, temp_dir_with_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI with a mix of file and directory paths."""
+    if sys.platform == "linux":
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     dir_path, dir_files = temp_dir_with_files
     mixed_paths = temp_files + [dir_path]
     monkeypatch.setattr(sys, "argv", ["fileclip"] + mixed_paths)
@@ -253,13 +266,13 @@ def test_cli_mixed_files_and_directory(temp_files, temp_dir_with_files, capsys, 
     mock_subprocess_run.assert_called_once()
     called_args = mock_subprocess_run.call_args[0][0]
     if sys.platform == "linux":
-        assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
+        assert called_args[0] in ["wl-copy", "xclip"]
         assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in temp_files + dir_files)
     elif sys.platform == "darwin":
-        assert called_args.startswith("osascript")  # macOS-specific command
+        assert called_args.startswith("osascript")
         assert all(os.path.abspath(f) in called_args for f in temp_files + dir_files)
     elif sys.platform == "win32":
-        assert "powershell.exe" in called_args  # Windows-specific command
+        assert "powershell.exe" in called_args
         assert all(os.path.abspath(f) in called_args for f in temp_files + dir_files)
 
 def test_cli_no_paths(capsys, monkeypatch):
@@ -280,6 +293,8 @@ def test_cli_invalid_path(capsys, monkeypatch):
 
 def test_cli_copy_files_failure(temp_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI when copy_files fails."""
+    if sys.platform == "linux":
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     mock_subprocess_run.side_effect = RuntimeError("Test error")
     monkeypatch.setattr(sys, "argv", ["fileclip"] + temp_files)
     with pytest.raises(SystemExit):
