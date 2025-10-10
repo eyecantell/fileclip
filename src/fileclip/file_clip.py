@@ -34,9 +34,14 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         paths = ','.join(f'"{p}"' for p in valid_paths)
         cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
         print(f"Executing Windows command: {cmd}")
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=5, env=os.environ.copy()
-        )
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=5, check=True, env=os.environ.copy()
+            )
+            print(f"Executing Windows command: {cmd}")
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Windows clipboard error: {e.stderr}")
+        
         if result.returncode != 0:
             raise RuntimeError(f"Windows clipboard error: {result.stderr}")
         print("Files copied to clipboard (Windows).")
@@ -46,9 +51,13 @@ def copy_files(file_paths: List[Union[str, os.PathLike]]) -> bool:
         files = ', '.join(f'POSIX file "{p}"' for p in valid_paths)
         cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
         print(f"Executing macOS command: {cmd}")
-        result = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=5, env=os.environ.copy()
-        )
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=5, check=True, env=os.environ.copy()
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"macOS clipboard error: {e.stderr}")
+        
         if result.returncode != 0:
             raise RuntimeError(f"macOS clipboard error: {result.stderr}")
         print("Files copied to clipboard (macOS).")

@@ -180,11 +180,11 @@ def test_copy_files_linux_xclip_subprocess_error(temp_files, mock_subprocess_run
 def test_copy_files_macos_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on macOS."""
     # Simulate the actual osascript command
-    cmd = "osascript -e 'tell app \"Finder\" to set the clipboard to {"
-    cmd += ", ".join(f'POSIX file "{p}"' for p in temp_files)
-    cmd += "}'"
-    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=cmd, stderr=b"macOS error"
+    cmd = 'osascript -e \'tell app "Finder" to set the clipboard to {'
+    cmd += ', '.join(f'POSIX file "{p}"' for p in temp_files)
+    cmd += '}\''
+    mock_subprocess_run.return_value = subprocess.CompletedProcess(
+        args=cmd, returncode=1, stdout="", stderr="macOS error"
     )
     with pytest.raises(RuntimeError, match="macOS clipboard error: macOS error"):
         copy_files(temp_files)
@@ -194,8 +194,8 @@ def test_copy_files_windows_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on Windows."""
     paths = ','.join(f'"{p}"' for p in temp_files)
     cmd = f'powershell.exe -Command "Set-Clipboard -Path {paths}"'
-    mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=cmd, stderr=b"Windows error"
+    mock_subprocess_run.return_value = subprocess.CompletedProcess(
+        args=cmd, returncode=1, stdout="", stderr="Windows error"
     )
     with pytest.raises(RuntimeError, match="Windows clipboard error: Windows error"):
         copy_files(temp_files)
