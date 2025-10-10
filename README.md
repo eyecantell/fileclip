@@ -17,7 +17,7 @@ Fileclip is a command-line tool for copying file references to the system clipbo
 ## Features
 
 - **Cross-Platform**: Works on Windows, macOS, and Linux (including WSL and containers).
-- **File and Directory Support**: Copies references to individual files or all files within directories (non-recursive by default).
+- **File and Directory Support**: Copies references to individual files or all files within directories (recursive by default).
 - **Clipboard Integration**: Uses native clipboard commands to copy file references or URIs, depending on the platform.
 - **Fallback for WSL/Containers**: In WSL or VS Code containers, falls back to copying `file://` URIs as text to the Windows clipboard for use in Windows applications.
 - **Container Support**: In VS Code containers, communicates with a Windows host service to copy native Windows file paths to the clipboard.
@@ -245,6 +245,11 @@ For VS Code containers, `fileclip` can communicate with a Windows host service t
 - **Timeouts**:
   - If `wl-copy` or `xclip` time out, check the debug output in `fileclip` and run the logged command manually.
   - Increase timeout in `file_clip.py` (e.g., `timeout=10`).
+
+## Limitations
+
+ - The upper limit for the number of files that can be copied/pasted has not been tested. The typical use case is expected to be a handful of files (e.g., 5-10). For very large directories, performance may degrade due to clipboard size limits or subprocess timeouts—test incrementally if needed.
+ - In container/WSL environments, native file references may fall back to text URIs, which paste as URLs rather than direct file copies in some Windows applications.
 
 ## Development
 
