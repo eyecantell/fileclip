@@ -179,8 +179,12 @@ def test_copy_files_linux_xclip_subprocess_error(temp_files, mock_subprocess_run
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS-specific test")
 def test_copy_files_macos_subprocess_error(temp_files, mock_subprocess_run):
     """Test copy_files with a subprocess error on macOS."""
+    # Simulate the actual osascript command
+    cmd = "osascript -e 'tell app \"Finder\" to set the clipboard to {"
+    cmd += ", ".join(f'POSIX file "{p}"' for p in temp_files)
+    cmd += "}'"
     mock_subprocess_run.side_effect = subprocess.CalledProcessError(
-        returncode=1, cmd=["osascript"], stderr=b"macOS error"
+        returncode=1, cmd=cmd, stderr=b"macOS error"
     )
     with pytest.raises(RuntimeError, match="macOS clipboard error: macOS error"):
         copy_files(temp_files)
@@ -228,8 +232,15 @@ def test_cli_directory(temp_dir_with_files, capsys, monkeypatch, mock_subprocess
     assert "Files copied to clipboard" in captured.out
     mock_subprocess_run.assert_called_once()
     called_args = mock_subprocess_run.call_args[0][0]
-    assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
-    assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in expected_files)
+    if sys.platform == "linux":
+        assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
+        assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in expected_files)
+    elif sys.platform == "darwin":
+        assert called_args.startswith("osascript")  # macOS-specific command
+        assert all(os.path.abspath(f) in called_args for f in expected_files)
+    elif sys.platform == "win32":
+        assert "powershell.exe" in called_args  # Windows-specific command
+        assert all(os.path.abspath(f) in called_args for f in expected_files)
 
 def test_cli_mixed_files_and_directory(temp_files, temp_dir_with_files, capsys, monkeypatch, mock_subprocess_run):
     """Test CLI with a mix of file and directory paths."""
@@ -241,8 +252,15 @@ def test_cli_mixed_files_and_directory(temp_files, temp_dir_with_files, capsys, 
     assert "Files copied to clipboard" in captured.out
     mock_subprocess_run.assert_called_once()
     called_args = mock_subprocess_run.call_args[0][0]
-    assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
-    assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in temp_files + dir_files)
+    if sys.platform == "linux":
+        assert called_args[0] in ["wl-copy", "xclip"]  # Linux-specific command
+        assert all(f"file://{os.path.abspath(f)}" in mock_subprocess_run.call_args[1]["input"].decode() for f in temp_files + dir_files)
+    elif sys.platform == "darwin":
+        assert called_args.startswith("osascript")  # macOS-specific command
+        assert all(os.path.abspath(f) in called_args for f in temp_files + dir_files)
+    elif sys.platform == "win32":
+        assert "powershell.exe" in called_args  # Windows-specific command
+        assert all(os.path.abspath(f) in called_args for f in temp_files + dir_files)
 
 def test_cli_no_paths(capsys, monkeypatch):
     """Test CLI with no paths."""
@@ -268,3 +286,13 @@ def test_cli_copy_files_failure(temp_files, capsys, monkeypatch, mock_subprocess
         main()
     captured = capsys.readouterr()
     assert "Failed to copy files: Test error" in captured.out
+
+def test_copy_files_linux_mocked(temp_files, mock_subprocess_run, monkeypatch):
+    """Test copy_files on Linux by mocking platform."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    result = copy_files(temp_files)
+    assert result is True
+    mock_subprocess_run.assert_called_once()
+    assert mock_subprocess_run.call_args[0][0][0] in ["wl-copy", "xclip"]
+    assert mock_subprocess_run.call_args[1]["input"].decode().startswith("file://")
