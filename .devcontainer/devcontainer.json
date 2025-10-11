@@ -30,5 +30,11 @@
                 "python.pythonPath": "/mounted/dev/fileclip/.venv/bin/python"
             }
         }
-    }
+    },
+    "remoteEnv": {
+        "FILECLIP_CONTAINER_WORKSPACE": "/mounted/dev",
+        "FILECLIP_HOST_WORKSPACE": "C:\\Users\\eyeca\\dev",
+        "FILECLIP_USE_WATCHER": "true"
+    },
+
 }
