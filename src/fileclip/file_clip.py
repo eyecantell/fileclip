@@ -42,7 +42,7 @@ def translate_path(container_path: Union[str, os.PathLike], container_workspace:
     
     rel_path = container_path.relative_to(container_workspace)
     host_path = host_workspace / rel_path
-    return str(host_path)  # Returns normalized path (e.g., C:\Users\user\dev\file.txt)
+    return str(host_path)
 
 def validate_path(path: Union[str, os.PathLike], container_workspace: str) -> bool:
     """
@@ -105,7 +105,7 @@ def wait_for_results(shared_dir: Path, request_id: str, timeout: float = 10.0) -
     observer.join()
     return {"success": False, "message": f"Timeout waiting for results after {timeout}s"}
 
-def test_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
+def check_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
     """
     Test if the watcher is running by writing a ping file.
     Args:
@@ -205,7 +205,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = No
             translated_paths.append(translate_path(path, container_workspace, host_workspace))
         
         # Test watcher
-        if not test_watcher(shared_dir):
+        if not check_watcher(shared_dir):
             print("Warning: Watcher not running; files may not copy to host clipboard. See README for setup.")
             return _copy_files_direct(valid_paths)  # Fallback to direct copy
         
