@@ -119,15 +119,16 @@ def test_translate_path(mock_env):
 def test_translate_path_invalid(mock_env):
     """Test path translation with invalid container path."""
     env = mock_env
-    with pytest.raises(ValueError, match="Path /other/test.txt is not under"):
-        translate_path("/other/test.txt", env['container_workspace'], env['host_workspace'])
+    invalid_path = str(Path(env['container_workspace']).parent / "other" / "test.txt")
+    with pytest.raises(ValueError, match=r"Path .* is not under"):
+        translate_path(invalid_path, env['container_workspace'], env['host_workspace'])
 
 # Test path validation
 def test_validate_path(mock_env):
     """Test path validation."""
     env = mock_env
     assert validate_path(f"{env['container_workspace']}/test.txt", env['container_workspace'])
-    assert not validate_path("/other/test.txt", env['container_workspace'])
+    assert not validate_path(str(Path(env['container_workspace']).parent / "other/test.txt"), env['container_workspace'])
 
 # Test write_fileclip_json
 def test_write_fileclip_json(tmp_path):
@@ -498,5 +499,3 @@ def test_collect_files_invalid():
     """Test collect_files with invalid path."""
     with pytest.raises(FileNotFoundError, match="Path nonexistent does not exist"):
         collect_files(["nonexistent"])
-
-
