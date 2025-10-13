@@ -167,8 +167,9 @@ def test_wait_for_results_timeout(tmp_path, mock_watchdog_observer):
     assert result == {"success": False, "message": "Timeout waiting for results after 0.1s"}
 
 # Test copy_files with valid files (direct mode)
-def test_copy_files_valid_files(temp_files, mock_subprocess_run, mock_env):
+def test_copy_files_valid_files(temp_files, mock_subprocess_run, mock_env, monkeypatch):
     """Test copy_files with valid files in direct mode."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     assert copy_files(temp_files, use_watcher=False)
     mock_subprocess_run.assert_called()
 
@@ -466,8 +467,9 @@ def test_copy_files_with_watcher(temp_files, mock_container, mock_env, mock_file
             load_mock.assert_not_called()  # Since wait_for_results is mocked, load is not called in test
             mock_subprocess_run.assert_not_called()  # No fallback to direct copy
 
-def test_copy_files_watcher_failure(temp_files, mock_container, mock_env, mock_subprocess_run, mock_file_io, mock_watchdog_observer):
+def test_copy_files_watcher_failure(temp_files, mock_container, mock_env, mock_subprocess_run, mock_file_io, mock_watchdog_observer, monkeypatch):
     """Test copy_files with watcher failure and fallback."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     env = mock_env
     shared_dir = Path(env['container_workspace']) / ".fileclip"
     shared_dir.mkdir(parents=True, exist_ok=True)
@@ -483,8 +485,9 @@ def test_copy_files_watcher_failure(temp_files, mock_container, mock_env, mock_s
             load_mock.assert_not_called()  # Since wait_for_results is mocked, load is not called in test
             mock_subprocess_run.assert_called()  # Fallback called _copy_files_direct
 
-def test_copy_files_no_watcher(temp_files, mock_container, mock_subprocess_run, mock_env):
+def test_copy_files_no_watcher(temp_files, mock_container, mock_subprocess_run, mock_env, monkeypatch):
     """Test copy_files with watcher disabled."""
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     result = copy_files(temp_files, use_watcher=False)
     assert result is True
     mock_subprocess_run.assert_called()
