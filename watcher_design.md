@@ -8,24 +8,24 @@ The `fileclip-watcher.py` script enables seamless clipboard copying of files fro
 - **Simplicity**: Keep the watcher lightweight, with business logic (path translation, validation) in `fileclip`.
 - **User Experience**: Use a hidden `.fileclip` directory to avoid workspace clutter; provide clear warnings if setup is incomplete.
 - **Configurability**: Support flexible usage via environment variables and CLI flags.
-- **Future-Proofing**: Handle rare concurrent requests using UUID-based file naming.
+- **Future-Proofing**: Handle rare concurrent requests using UUID-based file naming and hostname-specific sender IDs.
 
 ## Workflow
 1. **Watcher on Windows Host**:
    - Run `fileclip-watcher.py` as a background process (e.g., via Task Scheduler).
    - Monitor `<FILECLIP_HOST_WORKSPACE>/.fileclip` for `fileclip_<uuid>.json` using `watchdog`.
-   - Read JSON (e.g., `{"action": "copy_files", "sender": "container_pid_1234", "request_id": "uuid123", "paths": ["C:/Users/user/dev/file1.txt"]}`).
+   - Read JSON (e.g., `{"action": "copy_files", "sender": "container_mycontainer_1234", "request_id": "uuid123", "paths": ["C:/Users/user/dev/file1.txt"]}`).
    - Validate paths exist, call `fileclip.file_clip.copy_files`.
-   - Delete `fileclip_<uuid>.json`, write `fileclip_results_<uuid>.json` (e.g., `{"sender": "container_pid_1234", "request_id": "uuid123", "success": true, "message": "Copied 1 file"}`).
-   - Log actions to `.fileclip/fileclip_watcher.log` with timestamp, log level, and message.
+   - Delete `fileclip_<uuid>.json`, write `fileclip_results_<uuid>.json` (e.g., `{"sender": "container_mycontainer_1234", "request_id": "uuid123", "success": true, "message": "Copied 1 file"}`).
+   - Log actions to `.fileclip/fileclip_watcher.log` with timestamp, log level (e.g., INFO, ERROR), and message.
 
 2. **Fileclip in Container**:
    - Detect container via `os.getenv('DEV_CONTAINER')`, `/.dockerenv`, or `/vscode`.
    - Require `FILECLIP_CONTAINER_WORKSPACE` (e.g., `/mounted/dev`) and `FILECLIP_HOST_WORKSPACE` (e.g., `C:\Users\user\dev`) for path translation.
    - Translate paths (e.g., `/mounted/dev/file1.txt` → `C:\Users\user\dev\file1.txt`) and validate they are within `FILECLIP_CONTAINER_WORKSPACE`.
    - If `FILECLIP_USE_WATCHER=true` or `--use-watcher`:
-     - Test watcher: Write `fileclip_<uuid>.json` with `{"action": "ping", "sender": "container_pid_1234", "request_id": "uuid123"}`, wait 5s for removal. If not removed, warn: "Watcher not running; files may not copy to host. See README."
-     - Write `fileclip_<uuid>.json` with translated paths, `sender` (`container_pid_<os.getpid()>`), and `request_id`.
+     - Test watcher: Write `fileclip_<uuid>.json` with `{"action": "ping", "sender": "container_<hostname>_<pid>", "request_id": "uuid123"}`, wait 5s for removal. If not removed, warn: "Watcher not running; files may not copy to host. See README."
+     - Write `fileclip_<uuid>.json` with translated paths, `sender` (`container_<hostname>_<pid>` using `os.getenv('HOSTNAME')` and `os.getpid()`), and `request_id`.
      - Use `watchdog` to wait 10s for `fileclip_results_<uuid>.json`, log status, delete it.
    - Fallback to `copy_files` if watcher disabled or fails. On Linux containers, fallback requires `WAYLAND_DISPLAY` or `DISPLAY` for clipboard operations.
 
@@ -51,8 +51,8 @@ The `fileclip-watcher.py` script enables seamless clipboard copying of files fro
   - Fallback to direct `copy_files` if needed, handling platform-specific clipboard requirements (e.g., `wl-copy`/`xclip` on Linux).
 
 - **File Formats**:
-  - `fileclip_<uuid>.json`: `{"action": "copy_files"|"ping", "sender": "container_pid_1234", "request_id": "uuid123", "paths": ["C:/path/file1.txt"]}`
-  - `fileclip_results_<uuid>.json`: `{"sender": "container_pid_1234", "request_id": "uuid123", "success": bool, "message": str, "errors": [str]}`
+  - `fileclip_<uuid>.json`: `{"action": "copy_files"|"ping", "sender": "container_<hostname>_<pid>", "request_id": "uuid123", "paths": ["C:/path/file1.txt"]}`
+  - `fileclip_results_<uuid>.json`: `{"sender": "container_<hostname>_<pid>", "request_id": "uuid123", "success": bool, "message": str, "errors": [str]}`
 
 ## Configuration
 - **Environment Variables**:
@@ -60,7 +60,6 @@ The `fileclip-watcher.py` script enables seamless clipboard copying of files fro
   - `FILECLIP_HOST_WORKSPACE`: Required host path (e.g., `C:\Users\user\dev`).
   - `FILECLIP_USE_WATCHER`: `true`/`false` (default: auto-detect container).
   - `FILECLIP_WATCHER_TIMEOUT`: Ping/results timeout in seconds (default: 5s for ping, 10s for results; tests may use shorter timeouts, e.g., 0.1s, for speed).
-  - `FILECLIP_SHARED_DIR`: Optional override for `.fileclip` path.
 
 - **CLI Flags (fileclip)**:
   - `--use-watcher`: Force watcher mode.
@@ -76,13 +75,13 @@ The `fileclip-watcher.py` script enables seamless clipboard copying of files fro
 ## Security
 - Validate paths in `fileclip` to be under `FILECLIP_CONTAINER_WORKSPACE`.
 - Watcher re-validates paths exist on host to prevent errors from invalid or inaccessible paths.
-- UUID-based file naming prevents collisions for concurrent requests.
+- UUID-based file naming prevents collisions for concurrent requests from multiple containers.
 
 ## Testing
 - Create `tests/test_fileclip_watcher.py` to test watcher functionality.
 - Mock `watchdog` events, `copy_files`, and file I/O to simulate file creation and processing.
 - Test path translation, validation, ping response, and results handling.
-- Update CI to test watcher on Ubuntu (mock host) and Windows, ensuring compatibility with `fileclip`.
+- Update CI to test watcher on Windows (primary host) and Ubuntu (mock host for container tests). macOS testing is supported for `fileclip` clipboard operations but not required for the watcher unless macOS becomes a target host OS.
 
 ## Dependencies
 - `watchdog`: For file monitoring (`pdm add watchdog`).
