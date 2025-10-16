@@ -6,9 +6,6 @@ from unittest.mock import patch, MagicMock, mock_open
 from pathlib import Path
 from fileclip.fileclip_watcher import setup_logging, FileclipHandler, process_file, write_result, main
 
-# Skip watcher tests on macOS if watcher is Windows-only (optional, remove if not needed)
-# pytestmark = pytest.mark.skipif(sys.platform == "darwin", reason="Watcher is Windows-only")
-
 # Fixture for temporary shared directory
 @pytest.fixture
 def shared_dir(tmp_path):
@@ -62,13 +59,6 @@ def test_setup_logging(shared_dir, caplog):
     log_file = shared_dir / "fileclip_watcher.log"
     caplog.set_level(logging.INFO)
     
-    # Explicitly create a FileHandler to ensure file creation
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
-    handler = logging.FileHandler(log_file)
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.handlers = [handler]
-    
     setup_logging(log_file, "INFO")
     logging.info("Test log message")
     
@@ -83,16 +73,9 @@ def test_setup_logging_invalid_level(shared_dir, caplog):
     log_file = shared_dir / "fileclip_watcher.log"
     caplog.set_level(logging.WARNING)
     
-    # Explicitly create a FileHandler to ensure file creation
-    logger = logging.getLogger()
-    logger.setLevel(logging.WARNING)
-    handler = logging.FileHandler(log_file)
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.handlers = [handler]
-    
     setup_logging(log_file, "INVALID")
     assert logging.getLogger().level == logging.INFO  # Falls back to INFO
-    logging.warning("Test log message")  # Use warning to match caplog level
+    logging.warning("Test log message")
     assert log_file.exists()
     with open(log_file, "r") as f:
         log_content = f.read()
@@ -300,7 +283,7 @@ def test_process_file_copy_files_error(shared_dir, temp_files, mock_file_io, moc
         dump_mock.assert_called_once()
         result = dump_mock.call_args[0][0]
         assert result["success"] is False
-        assert result["message"] == "Failed to copy files: Clipboard error"
+        assert result["message"] == "Failed to write files: Clipboard error"
         assert "Clipboard error" in result["errors"]
         mock_unlink.assert_called_once_with(missing_ok=True)
 
@@ -328,10 +311,15 @@ def test_write_result_io_error(shared_dir, caplog):
         "message": "Test result",
         "errors": []
     }
-    # Mock open specifically for write_result to raise OSError
-    with patch("builtins.open", new_callable=mock_open) as mock_file:
+    caplog.set_level(logging.ERROR)
+    # Ensure propagation is enabled
+    logger = logging.getLogger()
+    logger.handlers = []  # Clear existing handlers
+    logger.setLevel(logging.ERROR)
+    logger.propagate = True
+    
+    with patch("fileclip.fileclip_watcher.open", new_callable=mock_open) as mock_file:
         mock_file.side_effect = OSError("Permission denied")
-        caplog.set_level(logging.ERROR)
         write_result(shared_dir, "test-uuid", result)
         assert "Failed to write result" in caplog.text
         assert "Permission denied" in caplog.text
@@ -361,7 +349,6 @@ def test_main(shared_dir, mock_watchdog_observer, mock_copy_files, monkeypatch, 
         mock_observer_instance.stop.assert_called_once()
         mock_observer_instance.join.assert_called_once()
         
-        # Check logs to diagnose early exits
         log_file = shared_dir / "fileclip_watcher.log"
         assert log_file.exists()
         with open(log_file, "r") as f:
