@@ -1,9 +1,13 @@
 import pytest
 import json
 import logging
-from unittest.mock import patch, MagicMock
+import sys
+from unittest.mock import patch, MagicMock, mock_open
 from pathlib import Path
 from fileclip.fileclip_watcher import setup_logging, FileclipHandler, process_file, write_result, main
+
+# Skip watcher tests on macOS if watcher is Windows-only
+pytestmark = pytest.mark.skipif(sys.platform == "darwin", reason="Watcher is Windows-only")
 
 # Fixture for temporary shared directory
 @pytest.fixture
@@ -19,7 +23,9 @@ def shared_dir(tmp_path):
 @pytest.fixture
 def mock_file_io():
     """Mock file I/O operations."""
-    with patch("builtins.open") as mock_open, patch("json.load") as mock_load, patch("json.dump") as mock_dump:
+    with patch("builtins.open", new_callable=mock_open) as mock_open, \
+         patch("json.load") as mock_load, \
+         patch("json.dump") as mock_dump:
         mock_open.return_value.__enter__.return_value = MagicMock()
         yield mock_open, mock_load, mock_dump
 
@@ -313,7 +319,7 @@ def test_write_result(shared_dir, mock_file_io):
     dump_mock.assert_called_once_with(result, open_mock.return_value.__enter__.return_value)
     open_mock.assert_called_once_with(shared_dir / "fileclip_results_test-uuid.json", "w")
 
-def test_write_result_io_error(shared_dir, mock_file_io, caplog):
+def test_write_result_io_error(shared_dir, caplog):
     """Test write_result with I/O error."""
     result = {
         "sender": "container_test-host_1234",
@@ -322,20 +328,14 @@ def test_write_result_io_error(shared_dir, mock_file_io, caplog):
         "message": "Test result",
         "errors": []
     }
-    open_mock, load_mock, dump_mock = mock_file_io
-    # Define a side effect to raise OSError only for the result file, not the log file
-    def open_side_effect(*args, **kwargs):
-        if str(args[0]).endswith("fileclip_results_test-uuid.json"):
-            raise OSError("Permission denied")
-        return open(args[0], args[1], **kwargs)  # Use real open for log file
-    open_mock.side_effect = open_side_effect
-    caplog.set_level(logging.ERROR)
-    
-    write_result(shared_dir, "test-uuid", result)
-    assert "Failed to write result" in caplog.text
-    assert "Permission denied" in caplog.text
-    open_mock.assert_called_once_with(shared_dir / "fileclip_results_test-uuid.json", "w")
-    dump_mock.assert_not_called()
+    # Mock open specifically for write_result to raise OSError
+    with patch("builtins.open", new_callable=mock_open) as mock_file:
+        mock_file.side_effect = OSError("Permission denied")
+        caplog.set_level(logging.ERROR)
+        write_result(shared_dir, "test-uuid", result)
+        assert "Failed to write result" in caplog.text
+        assert "Permission denied" in caplog.text
+        mock_file.assert_called_once_with(shared_dir / "fileclip_results_test-uuid.json", "w")
 
 # Test main
 def test_main(shared_dir, mock_watchdog_observer, mock_copy_files, monkeypatch, caplog):

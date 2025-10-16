@@ -1,6 +1,10 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   test:
@@ -8,31 +12,36 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']  # Drop 3.13 for now
-        # Allow 3.13 failures until fixed
-        include:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        exclude:
           - os: macos-latest
-            python-version: '3.13'
-            experimental: true
-    continue-on-error: ${{ matrix.experimental || false }}
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install PDM
-        run: pip install pdm
-      - name: Install dependencies
-        run: pdm install -G test -G dev
-      - name: Install Linux deps (if applicable)
-        if: runner.os == 'Linux'
-        run: sudo apt update && sudo apt install wl-clipboard xclip
-      - name: Run tests
-        run: pdm run pytest -v --cov=src/fileclip --cov-report=term --cov-report=html
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: htmlcov/
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install PDM
+      run: pip install pdm
+
+    - name: Install dependencies
+      run: pdm install -G test -G dev
+
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get update && sudo apt-get install -y wl-clipboard xclip
+
+    - name: Run tests
+      run: pdm run pytest -v --cov=src/fileclip --cov-report=term --cov-report=html
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report-${{ matrix.os }}-python-${{ matrix.python-version }}
+        path: htmlcov/

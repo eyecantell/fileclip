@@ -28,17 +28,14 @@ keywords = [
     "file-upload",
 ]
 requires-python = ">=3.9"
-dependencies = ["watchdog>=6.0.0"]
-
-[project.optional-dependencies]
-test = [
-    "pytest>=7.4.4",
-    "pytest-cov>=4.1.0",
-    "coverage>=7.2.7",
+dependencies = [
+    "pyperclip>=1.8.2",
+    "watchdog>=6.0.0",
 ]
 
 [project.scripts]
 fileclip = "fileclip.main:main"
+fileclip-watcher = "fileclip.fileclip_watcher:main"
 
 [project.urls]
 Repository = "https://github.com/eyecantell/fileclip"
@@ -58,6 +55,7 @@ includes = ["src/fileclip"]
 test = [
     "pytest>=7.4.4",
     "pytest-cov>=4.1.0",
+    "pytest-mock>=3.14.0",
     "coverage>=7.2.7",
 ]
 dev = [
