@@ -6,8 +6,8 @@ from unittest.mock import patch, MagicMock, mock_open
 from pathlib import Path
 from fileclip.fileclip_watcher import setup_logging, FileclipHandler, process_file, write_result, main
 
-# Skip watcher tests on macOS if watcher is Windows-only
-pytestmark = pytest.mark.skipif(sys.platform == "darwin", reason="Watcher is Windows-only")
+# Skip watcher tests on macOS if watcher is Windows-only (optional, remove if not needed)
+# pytestmark = pytest.mark.skipif(sys.platform == "darwin", reason="Watcher is Windows-only")
 
 # Fixture for temporary shared directory
 @pytest.fixture
@@ -23,11 +23,11 @@ def shared_dir(tmp_path):
 @pytest.fixture
 def mock_file_io():
     """Mock file I/O operations."""
-    with patch("builtins.open", new_callable=mock_open) as mock_open, \
+    with patch("builtins.open", new_callable=mock_open) as mock_file, \
          patch("json.load") as mock_load, \
          patch("json.dump") as mock_dump:
-        mock_open.return_value.__enter__.return_value = MagicMock()
-        yield mock_open, mock_load, mock_dump
+        mock_file.return_value.__enter__.return_value = MagicMock()
+        yield mock_file, mock_load, mock_dump
 
 # Fixture for mocking watchdog observer
 @pytest.fixture
