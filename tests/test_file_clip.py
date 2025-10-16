@@ -136,15 +136,15 @@ def test_write_fileclip_json(tmp_path):
     shared_dir = tmp_path / ".fileclip"
     shared_dir.mkdir(parents=True, exist_ok=True)
     paths = [r"C:\host\path\test.txt"]
-    sender = "container_pid_1234"
-    request_id, json_file = write_fileclip_json(shared_dir, paths, sender)
-    assert json_file.exists()
-    with open(json_file, "r") as f:
-        data = json.load(f)
-    assert data["action"] == "copy_files"
-    assert data["sender"] == sender
-    assert data["request_id"] == request_id
-    assert data["paths"] == paths
+    with patch("socket.gethostname", return_value="test-host"), patch("os.getpid", return_value=1234):
+        request_id, json_file = write_fileclip_json(shared_dir, paths, "unused_sender")
+        assert json_file.exists()
+        with open(json_file, "r") as f:
+            data = json.load(f)
+        assert data["action"] == "copy_files"
+        assert data["sender"] == "container_test-host_1234"
+        assert data["request_id"] == request_id
+        assert data["paths"] == paths
 
 # Test check_watcher with no response
 def test_check_watcher_no_response(tmp_path):

@@ -4,6 +4,7 @@ import sys
 import json
 import uuid
 import time
+import socket
 from pathlib import Path
 from typing import List, Union
 from watchdog.observers import Observer
@@ -118,7 +119,7 @@ def check_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
     ping_file = shared_dir / f"fileclip_{request_id}.json"
     ping_data = {
         "action": "ping",
-        "sender": f"container_pid_{os.getpid()}",
+        "sender": f"container_{socket.gethostname()}_{os.getpid()}",
         "request_id": request_id
     }
     try:
@@ -142,7 +143,7 @@ def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tupl
     Args:
         shared_dir: Directory for fileclip_<uuid>.json.
         paths: List of host paths to copy.
-        sender: Sender identifier (e.g., container_pid_1234).
+        sender: Sender identifier (e.g., container_<hostname>_<pid>).
     Returns:
         tuple: (request_id, json_file_path).
     """
@@ -150,7 +151,7 @@ def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tupl
     json_file = shared_dir / f"fileclip_{request_id}.json"
     data = {
         "action": "copy_files",
-        "sender": sender,
+        "sender": f"container_{socket.gethostname()}_{os.getpid()}",
         "request_id": request_id,
         "paths": paths
     }
@@ -210,7 +211,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = No
             return _copy_files_direct(valid_paths)  # Fallback to direct copy
         
         # Write fileclip_<uuid>.json
-        sender = f"container_pid_{os.getpid()}"
+        sender = f"container_{socket.gethostname()}_{os.getpid()}"
         request_id, json_file = write_fileclip_json(shared_dir, translated_paths, sender)
         
         # Wait for results
