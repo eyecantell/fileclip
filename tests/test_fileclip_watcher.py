@@ -323,7 +323,12 @@ def test_write_result_io_error(shared_dir, mock_file_io, caplog):
         "errors": []
     }
     open_mock, load_mock, dump_mock = mock_file_io
-    open_mock.side_effect = OSError("Permission denied")
+    # Define a side effect to raise OSError only for the result file, not the log file
+    def open_side_effect(*args, **kwargs):
+        if str(args[0]).endswith("fileclip_results_test-uuid.json"):
+            raise OSError("Permission denied")
+        return open(args[0], args[1], **kwargs)  # Use real open for log file
+    open_mock.side_effect = open_side_effect
     caplog.set_level(logging.ERROR)
     
     write_result(shared_dir, "test-uuid", result)
