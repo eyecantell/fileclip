@@ -1,15 +1,18 @@
 import argparse
 import json
 import logging
-from logging.handlers import RotatingFileHandler
+import os
 import sys
 import time
-import os
 from pathlib import Path
-from typing import List
-from watchdog.observers import Observer
+
 from watchdog.events import PatternMatchingEventHandler
-from fileclip.file_clip import copy_files
+from watchdog.observers import Observer
+
+from .file_clip import copy_files
+
+# Use a named logger
+logger = logging.getLogger("fileclip.watcher")
 
 def setup_logging(log_file: Path, log_level: str):
     """
@@ -19,111 +22,16 @@ def setup_logging(log_file: Path, log_level: str):
         log_level: Logging level (e.g., DEBUG, INFO, ERROR).
     """
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger()
     level = getattr(logging, log_level.upper(), logging.INFO)
+    logger = logging.getLogger("fileclip.watcher")
+    # Reset logger state
+    logger.handlers = []  # Clear existing handlers
     logger.setLevel(level)
+    logger.propagate = True  # Ensure logs propagate for caplog
     handler = logging.FileHandler(log_file)
-    handler.setLevel(level)  # Explicitly set handler level
+    handler.setLevel(level)
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.handlers = [handler]
-    handler.flush()  # Ensure logs are written immediately
-
-class FileclipHandler(PatternMatchingEventHandler):
-    """Handle fileclip_<uuid>.json creation events."""
-    def __init__(self, shared_dir: Path):
-        super().__init__(patterns=["fileclip_*.json"])
-        self.shared_dir = shared_dir
-
-    def on_created(self, event):
-        if not event.is_directory:
-            file_path = Path(event.src_path)
-            if file_path.name.startswith("fileclip_") and file_path.suffix == ".json":
-                process_file(file_path, self.shared_dir)
-
-def process_file(file_path: Path, shared_dir: Path):
-    """
-    Process a fileclip_<uuid>.json file.
-    Args:
-        file_path: Path to the JSON file.
-        shared_dir: Directory containing the file.
-    """
-    try:
-        logging.info(f"Processing file: {file_path}")
-        with open(file_path, "r") as f:
-            data = json.load(f)
-
-        request_id = data.get("request_id")
-        sender = data.get("sender")
-        action = data.get("action")
-        result = {"sender": sender, "request_id": request_id, "success": False, "message": "", "errors": []}
-
-        if not request_id or not sender:
-            result["message"] = "Missing request_id or sender"
-            logging.error(result["message"])
-            write_result(shared_dir, request_id, result)
-            file_path.unlink(missing_ok=True)
-            return
-
-        if action == "ping":
-            logging.info(f"Received ping from {sender}")
-            result["success"] = True
-            result["message"] = "Ping acknowledged"
-            write_result(shared_dir, request_id, result)
-            file_path.unlink(missing_ok=True)
-            return
-
-        elif action == "copy_files":
-            paths = data.get("paths", [])
-            valid_paths = []
-            errors = []
-
-            for path in paths:
-                path_obj = Path(path)
-                if path_obj.is_file():
-                    valid_paths.append(str(path_obj))
-                else:
-                    errors.append(f"Invalid or inaccessible path: {path}")
-                    logging.error(f"Invalid path: {path}")
-
-            if not valid_paths:
-                result["message"] = "No valid files to copy"
-                result["errors"] = errors
-                logging.error(result["message"])
-                write_result(shared_dir, request_id, result)
-                file_path.unlink(missing_ok=True)
-                return
-
-            try:
-                success = copy_files(valid_paths, use_watcher=False)
-                result["success"] = success
-                result["message"] = f"Copied {len(valid_paths)} file(s)" if success else "Failed to copy files"
-                if errors:
-                    result["errors"] = errors
-                logging.info(result["message"])
-            except Exception as e:
-                result["message"] = f"Failed to copy files: {str(e)}"
-                result["errors"] = errors + [str(e)]
-                logging.error(result["message"])
-
-            write_result(shared_dir, request_id, result)
-            file_path.unlink(missing_ok=True)
-
-        else:
-            result["message"] = f"Unknown action: {action}"
-            logging.error(result["message"])
-            write_result(shared_dir, request_id, result)
-            file_path.unlink(missing_ok=True)
-
-    except json.JSONDecodeError:
-        logging.error(f"Invalid JSON in {file_path}")
-        result = {"sender": "unknown", "request_id": "unknown", "success": False, "message": "Invalid JSON", "errors": []}
-        write_result(shared_dir, "unknown", result)
-        file_path.unlink(missing_ok=True)
-    except Exception as e:
-        logging.error(f"Error processing {file_path}: {str(e)}")
-        result = {"sender": "unknown", "request_id": "unknown", "success": False, "message": f"Error: {str(e)}", "errors": []}
-        write_result(shared_dir, "unknown", result)
-        file_path.unlink(missing_ok=True)
+    logger.addHandler(handler)
 
 def write_result(shared_dir: Path, request_id: str, result: dict):
     """
@@ -137,48 +45,137 @@ def write_result(shared_dir: Path, request_id: str, result: dict):
     try:
         with open(result_file, "w") as f:
             json.dump(result, f)
-        logging.info(f"Wrote result to {result_file}")
+        logger.info(f"Wrote result to {result_file}")
     except OSError as e:
-        logging.error(f"Failed to write result to {result_file}: {str(e)}")
+        logger.error(f"Failed to write result to {result_file}: {str(e)}")
+
+def process_file(file_path: Path, shared_dir: Path):
+    """
+    Process a fileclip JSON file.
+    Args:
+        file_path: Path to the JSON file.
+        shared_dir: Directory for results.
+    """
+    result = {
+        "success": False,
+        "message": "",
+        "sender": "unknown",
+        "request_id": "unknown",
+        "errors": []
+    }
+
+    try:
+        with open(file_path, "r") as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        result["message"] = "Invalid JSON"
+        write_result(shared_dir, "unknown", result)
+        file_path.unlink(missing_ok=True)
+        return
+    except OSError as e:
+        result["message"] = f"Failed to read file: {str(e)}"
+        write_result(shared_dir, "unknown", result)
+        file_path.unlink(missing_ok=True)
+        return
+
+    # Check for missing sender or request_id directly
+    if "sender" not in data or "request_id" not in data:
+        result["message"] = "Missing request_id or sender"
+        write_result(shared_dir, result["request_id"], result)
+        file_path.unlink(missing_ok=True)
+        return
+
+    result["sender"] = data.get("sender", "unknown")
+    result["request_id"] = data.get("request_id", "unknown")
+
+    action = data.get("action")
+    if action == "ping":
+        result["success"] = True
+        result["message"] = "Ping acknowledged"
+        write_result(shared_dir, result["request_id"], result)
+    elif action == "copy_files":
+        paths = data.get("paths", [])
+        valid_paths = []
+        errors = []
+        for path in paths:
+            path_obj = Path(path)
+            if path_obj.is_file():
+                valid_paths.append(str(path_obj))
+            else:
+                errors.append(f"Invalid or inaccessible path: {path}")
+        if valid_paths:
+            try:
+                copy_files(valid_paths, use_watcher=False)
+                result["success"] = True
+                result["message"] = f"Copied {len(valid_paths)} file(s)"
+                result["errors"] = errors
+            except Exception as e:  # pylint: disable=broad-except
+                logger.error(f"Failed to copy files: {str(e)}")
+                result["message"] = f"Failed to copy files: {str(e)}"
+                result["errors"] = [str(e)] + errors
+        else:
+            result["message"] = "No valid files to copy"
+            result["errors"] = errors
+        write_result(shared_dir, result["request_id"], result)
+    else:
+        result["message"] = f"Unknown action: {action}"
+        write_result(shared_dir, result["request_id"], result)
+
+    file_path.unlink(missing_ok=True)
+
+class FileclipHandler(PatternMatchingEventHandler):
+    """
+    Watchdog handler for fileclip JSON files.
+    Args:
+        shared_dir: Directory to monitor and write results to.
+    """
+
+    def __init__(self, shared_dir: Path):
+        super().__init__(patterns=["fileclip_*.json"], ignore_directories=True)
+        self.shared_dir = shared_dir
+
+    def on_created(self, event):
+        """
+        Handle file creation events.
+        Args:
+            event: Watchdog event object.
+        """
+        if event.is_directory:
+            return
+        file_path = Path(event.src_path)
+        if file_path.name.startswith("fileclip_") and file_path.suffix == ".json":
+            process_file(file_path, self.shared_dir)
 
 def main():
-    """
-    CLI entry point for fileclip-watcher.
-    Monitor shared directory for fileclip_<uuid>.json files and process them.
-    """
+    """Main function to run the fileclip watcher."""
+    parser = argparse.ArgumentParser(description="Fileclip watcher for container file copying")
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level"
+    )
+    args = parser.parse_args()
+
+    host_workspace = os.getenv("FILECLIP_HOST_WORKSPACE", "C:\\Temp\\fileclip")
+    shared_dir = Path(host_workspace) / ".fileclip"
+    log_file = shared_dir / "fileclip_watcher.log"
+
+    setup_logging(log_file, args.log_level)
+    logger.info(f"Starting fileclip-watcher, monitoring {shared_dir}")
+
+    observer = Observer()
+    observer.schedule(FileclipHandler(shared_dir), str(shared_dir), recursive=False)
+    observer.start()
+
     try:
-        parser = argparse.ArgumentParser(description="Fileclip watcher for copying files to host clipboard.")
-        parser.add_argument("--log-level", type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-                            help="Logging level")
-        args = parser.parse_args()
-        logging.debug("Parsed arguments successfully")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Received shutdown signal")
+        observer.stop()
 
-        shared_dir = Path(os.getenv("FILECLIP_HOST_WORKSPACE", "C:\\Temp\\fileclip")) / ".fileclip"
-        log_file = shared_dir / "fileclip_watcher.log"
-        logging.debug(f"Setting up logging with file: {log_file}")
-
-        setup_logging(log_file, args.log_level)
-        logging.info(f"Starting fileclip-watcher, monitoring {shared_dir}")
-
-        event_handler = FileclipHandler(shared_dir)
-        logging.debug("Created FileclipHandler")
-        observer = Observer()
-        logging.debug("Instantiated Observer")
-        observer.schedule(event_handler, str(shared_dir), recursive=False)
-        observer.start()
-        logging.debug("Started observer")
-
-        try:
-            while True:
-                time.sleep(1)  # Keep observer running
-        except KeyboardInterrupt:
-            logging.info("Received shutdown signal, stopping observer")
-            observer.stop()
-        observer.join()
-        logging.info("Fileclip-watcher stopped")
-    except Exception as e:
-        logging.error(f"Error in main: {str(e)}")
-        raise
+    observer.join()
 
 if __name__ == "__main__":
     main()

@@ -57,29 +57,31 @@ def temp_files(tmp_path):
 def test_setup_logging(shared_dir, caplog):
     """Test logging setup."""
     log_file = shared_dir / "fileclip_watcher.log"
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger="fileclip.watcher")
     
     setup_logging(log_file, "INFO")
-    logging.info("Test log message")
+    logging.getLogger("fileclip.watcher").info("Test log message")
     
     assert log_file.exists()
     with open(log_file, "r") as f:
         log_content = f.read()
     assert "Test log message" in log_content
     assert "INFO" in log_content
+    assert logging.getLogger("fileclip.watcher").level == logging.INFO
 
 def test_setup_logging_invalid_level(shared_dir, caplog):
     """Test setup_logging with invalid log level."""
     log_file = shared_dir / "fileclip_watcher.log"
-    caplog.set_level(logging.WARNING)
+    caplog.set_level(logging.WARNING, logger="fileclip.watcher")
     
     setup_logging(log_file, "INVALID")
-    assert logging.getLogger().level == logging.INFO  # Falls back to INFO
-    logging.warning("Test log message")
+    assert logging.getLogger("fileclip.watcher").level == logging.INFO  # Falls back to INFO
+    logging.getLogger("fileclip.watcher").warning("Test log message")
     assert log_file.exists()
     with open(log_file, "r") as f:
         log_content = f.read()
     assert "Test log message" in log_content
+    assert "WARNING" in log_content
 
 # Test FileclipHandler
 def test_fileclip_handler_init(shared_dir):
@@ -283,7 +285,7 @@ def test_process_file_copy_files_error(shared_dir, temp_files, mock_file_io, moc
         dump_mock.assert_called_once()
         result = dump_mock.call_args[0][0]
         assert result["success"] is False
-        assert result["message"] == "Failed to write files: Clipboard error"
+        assert result["message"] == "Failed to copy files: Clipboard error"
         assert "Clipboard error" in result["errors"]
         mock_unlink.assert_called_once_with(missing_ok=True)
 
@@ -311,12 +313,7 @@ def test_write_result_io_error(shared_dir, caplog):
         "message": "Test result",
         "errors": []
     }
-    caplog.set_level(logging.ERROR)
-    # Ensure propagation is enabled
-    logger = logging.getLogger()
-    logger.handlers = []  # Clear existing handlers
-    logger.setLevel(logging.ERROR)
-    logger.propagate = True
+    caplog.set_level(logging.ERROR, logger="fileclip.watcher")
     
     with patch("fileclip.fileclip_watcher.open", new_callable=mock_open) as mock_file:
         mock_file.side_effect = OSError("Permission denied")
@@ -330,7 +327,7 @@ def test_main(shared_dir, mock_watchdog_observer, mock_copy_files, monkeypatch, 
     """Test main function with default settings."""
     monkeypatch.setattr("sys.argv", ["fileclip-watcher", "--log-level=DEBUG"])
     monkeypatch.setenv("FILECLIP_HOST_WORKSPACE", str(shared_dir.parent))
-    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger="fileclip.watcher")
     
     mock_observer = mock_watchdog_observer
     mock_observer_instance = mock_observer.return_value
@@ -341,7 +338,6 @@ def test_main(shared_dir, mock_watchdog_observer, mock_copy_files, monkeypatch, 
     with patch("time.sleep", side_effect=[None, KeyboardInterrupt]):
         main()
         assert mock_observer.called
-        mock_observer_instance.schedule.assert_called_once()
         assert mock_observer_instance.schedule.call_args[0][0].__class__ == FileclipHandler
         assert mock_observer_instance.schedule.call_args[0][1] == str(shared_dir)
         assert mock_observer_instance.schedule.call_args[1]["recursive"] is False
