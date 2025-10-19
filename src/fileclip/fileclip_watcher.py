@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from watchdog.events import PatternMatchingEventHandler
-from watchdog.observers.polling import PollingObserver  # Use polling for reliability on mounted dirs
+from watchdog.observers.polling import PollingObserver
 
 from .file_clip import copy_files
 
@@ -65,9 +65,9 @@ def process_file(file_path: Path, shared_dir: Path):
     }
 
     try:
+        logger.info(f"Processing file: {file_path}")
         with open(file_path, "r") as f:
             data = json.load(f)
-        logger.debug(f"Loaded data: {data}")
     except json.JSONDecodeError:
         logger.error(f"Invalid JSON in {file_path}")
         result["message"] = "Invalid JSON"
@@ -75,7 +75,7 @@ def process_file(file_path: Path, shared_dir: Path):
         file_path.unlink(missing_ok=True)
         return
     except OSError as e:
-        logger.error(f"Failed to read file {file_path}: {str(e)}")
+        logger.error(f"Error processing {file_path}: {str(e)}")
         result["message"] = f"Failed to read file: {str(e)}"
         write_result(shared_dir, "unknown", result)
         file_path.unlink(missing_ok=True)
@@ -106,12 +106,14 @@ def process_file(file_path: Path, shared_dir: Path):
                 valid_paths.append(str(path_obj))
             else:
                 errors.append(f"Invalid or inaccessible path: {path}")
+                logger.error(f"Invalid path: {path}")
         if valid_paths:
             try:
-                copy_files(valid_paths, use_watcher=False)
-                result["success"] = True
-                result["message"] = f"Copied {len(valid_paths)} file(s)"
+                success = copy_files(valid_paths, use_watcher=False)
+                result["success"] = success
+                result["message"] = f"Copied {len(valid_paths)} file(s)" if success else "Failed to copy files"
                 result["errors"] = errors
+                logger.info(result["message"])
             except Exception as e:  # pylint: disable=broad-except
                 logger.error(f"Failed to copy files: {str(e)}")
                 result["message"] = f"Failed to copy files: {str(e)}"
@@ -119,9 +121,11 @@ def process_file(file_path: Path, shared_dir: Path):
         else:
             result["message"] = "No valid files to copy"
             result["errors"] = errors
+            logger.error(result["message"])
         write_result(shared_dir, result["request_id"], result)
     else:
         result["message"] = f"Unknown action: {action}"
+        logger.error(result["message"])
         write_result(shared_dir, result["request_id"], result)
 
     file_path.unlink(missing_ok=True)
@@ -168,7 +172,7 @@ def main():
     setup_logging(log_file, args.log_level)
     logger.info(f"Starting fileclip-watcher, monitoring {shared_dir}")
 
-    observer = PollingObserver()  # Use polling for reliability on mounted dirs
+    observer = PollingObserver()
     observer.schedule(FileclipHandler(shared_dir), str(shared_dir), recursive=False)
     observer.start()
 
