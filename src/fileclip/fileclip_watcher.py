@@ -9,7 +9,7 @@ from pathlib import Path
 from watchdog.events import PatternMatchingEventHandler
 from watchdog.observers.polling import PollingObserver
 
-from .file_clip import copy_files
+from .file_clip import copy_files, FILECLIP_REQUEST_PREFIX, FILECLIP_RESULTS_PREFIX
 
 # Use a named logger
 logger = logging.getLogger("fileclip.watcher")
@@ -41,7 +41,7 @@ def write_result(shared_dir: Path, request_id: str, result: dict):
         request_id: UUID for the result file.
         result: Result dictionary to write.
     """
-    result_file = shared_dir / f"fileclip_results_{request_id}.json"
+    result_file = shared_dir / f"{FILECLIP_RESULTS_PREFIX}{request_id}.json"
     try:
         with open(result_file, "w") as f:
             json.dump(result, f)
@@ -138,7 +138,7 @@ class FileclipHandler(PatternMatchingEventHandler):
     """
 
     def __init__(self, shared_dir: Path):
-        super().__init__(patterns=["fileclip_*.json"], ignore_directories=True)
+        super().__init__(patterns=[f"{FILECLIP_REQUEST_PREFIX}*.json"], ignore_directories=True)
         self.shared_dir = shared_dir
 
     def on_created(self, event):
@@ -150,7 +150,7 @@ class FileclipHandler(PatternMatchingEventHandler):
         if event.is_directory:
             return
         file_path = Path(event.src_path)
-        if file_path.name.startswith("fileclip_") and file_path.suffix == ".json":
+        if file_path.name.startswith(FILECLIP_REQUEST_PREFIX) and file_path.suffix == ".json":
             logger.debug(f"Detected new file: {file_path}")
             process_file(file_path, self.shared_dir)
 

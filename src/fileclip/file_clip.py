@@ -10,6 +10,9 @@ from typing import List, Union
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver as Observer
 
+FILECLIP_REQUEST_PREFIX = "fileclip_request_"
+FILECLIP_RESULTS_PREFIX = "fileclip_results_"
+
 def is_container() -> bool:
     """
     Detect if running in a container environment.
@@ -84,7 +87,7 @@ def wait_for_results(shared_dir: Path, request_id: str, timeout: float = 10.0) -
     Returns:
         dict: Results from fileclip_results_<uuid>.json or {"success": False, "message": "Timeout"}.
     """
-    results_path = shared_dir / f"fileclip_results_{request_id}.json"
+    results_path = shared_dir / f"{FILECLIP_RESULTS_PREFIX}{request_id}.json"
     results = {"found": False}
     handler = ResultsHandler(results_path, results)
     observer = Observer()
@@ -97,6 +100,7 @@ def wait_for_results(shared_dir: Path, request_id: str, timeout: float = 10.0) -
             try:
                 with open(results_path, "r") as f:
                     data = json.load(f)
+                print(f"Removing results file {results_path}")
                 results_path.unlink(missing_ok=True)  # Delete after reading
                 observer.stop()
                 observer.join()
@@ -113,13 +117,13 @@ def check_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
     """
     Test if the watcher is running by writing a ping file.
     Args:
-        shared_dir: Directory for fileclip_<uuid>.json.
+        shared_dir: Directory for fileclip_request_<uuid>.json.
         timeout: Max wait time in seconds.
     Returns:
         bool: True if watcher responds, False otherwise.
     """
     request_id = str(uuid.uuid4())
-    ping_file = shared_dir / f"fileclip_{request_id}.json"
+    ping_file = shared_dir / f"{FILECLIP_REQUEST_PREFIX}{request_id}.json"
     ping_data = {
         "action": "ping",
         "sender": f"container_{socket.gethostname()}_{os.getpid()}",
@@ -144,14 +148,14 @@ def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tupl
     """
     Write fileclip_<uuid>.json with paths to copy.
     Args:
-        shared_dir: Directory for fileclip_<uuid>.json.
+        shared_dir: Directory for fileclip_request_<uuid>.json.
         paths: List of host paths to copy.
         sender: Sender identifier (e.g., container_<hostname>_<pid>).
     Returns:
         tuple: (request_id, json_file_path).
     """
     request_id = str(uuid.uuid4())
-    json_file = shared_dir / f"fileclip_{request_id}.json"
+    json_file = shared_dir / f"{FILECLIP_REQUEST_PREFIX}{request_id}.json"
     data = {
         "action": "copy_files",
         "sender": sender,
@@ -213,7 +217,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = No
             print("Warning: Watcher not running; files may not copy to host clipboard. See README for setup.")
             return _copy_files_direct(valid_paths)  # Fallback to direct copy
         
-        # Write fileclip_<uuid>.json
+        # Write fileclip_request_<uuid>.json
         sender = f"container_{socket.gethostname()}_{os.getpid()}"
         request_id, json_file = write_fileclip_json(shared_dir, translated_paths, sender)
         
