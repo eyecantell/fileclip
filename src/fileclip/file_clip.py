@@ -7,8 +7,8 @@ import time
 import socket
 from pathlib import Path
 from typing import List, Union
-from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers.polling import PollingObserver as Observer
 
 def is_container() -> bool:
     """
@@ -34,16 +34,19 @@ def translate_path(container_path: Union[str, os.PathLike], container_workspace:
     Raises:
         ValueError: If path is not under container_workspace.
     """
-    container_path = Path(container_path).resolve()
-    container_workspace = Path(container_workspace).resolve()
-    host_workspace = Path(host_workspace).resolve()
+    container_path = str(Path(container_path).resolve())
+    container_workspace = str(Path(container_workspace).resolve())
     
-    if not str(container_path).startswith(str(container_workspace)):
+    if not container_path.startswith(container_workspace):
         raise ValueError(f"Path {container_path} is not under {container_workspace}")
     
-    rel_path = container_path.relative_to(container_workspace)
-    host_path = host_workspace / rel_path
-    return str(host_path)
+    rel_path = container_path[len(container_workspace):].lstrip('/\\')
+    rel_path = rel_path.replace('/', '\\')
+    
+    host_workspace = host_workspace.replace('/', '\\')
+    host_path = host_workspace.rstrip('\\') + '\\' + rel_path
+    
+    return host_path
 
 def validate_path(path: Union[str, os.PathLike], container_workspace: str) -> bool:
     """
@@ -151,7 +154,7 @@ def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tupl
     json_file = shared_dir / f"fileclip_{request_id}.json"
     data = {
         "action": "copy_files",
-        "sender": f"container_{socket.gethostname()}_{os.getpid()}",
+        "sender": sender,
         "request_id": request_id,
         "paths": paths
     }

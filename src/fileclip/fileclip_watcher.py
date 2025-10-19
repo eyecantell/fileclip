@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from watchdog.events import PatternMatchingEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver  # Use polling for reliability on mounted dirs
 
 from .file_clip import copy_files
 
@@ -67,12 +67,15 @@ def process_file(file_path: Path, shared_dir: Path):
     try:
         with open(file_path, "r") as f:
             data = json.load(f)
+        logger.debug(f"Loaded data: {data}")
     except json.JSONDecodeError:
+        logger.error(f"Invalid JSON in {file_path}")
         result["message"] = "Invalid JSON"
         write_result(shared_dir, "unknown", result)
         file_path.unlink(missing_ok=True)
         return
     except OSError as e:
+        logger.error(f"Failed to read file {file_path}: {str(e)}")
         result["message"] = f"Failed to read file: {str(e)}"
         write_result(shared_dir, "unknown", result)
         file_path.unlink(missing_ok=True)
@@ -144,6 +147,7 @@ class FileclipHandler(PatternMatchingEventHandler):
             return
         file_path = Path(event.src_path)
         if file_path.name.startswith("fileclip_") and file_path.suffix == ".json":
+            logger.debug(f"Detected new file: {file_path}")
             process_file(file_path, self.shared_dir)
 
 def main():
@@ -164,7 +168,7 @@ def main():
     setup_logging(log_file, args.log_level)
     logger.info(f"Starting fileclip-watcher, monitoring {shared_dir}")
 
-    observer = Observer()
+    observer = PollingObserver()  # Use polling for reliability on mounted dirs
     observer.schedule(FileclipHandler(shared_dir), str(shared_dir), recursive=False)
     observer.start()
 
