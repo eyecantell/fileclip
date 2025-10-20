@@ -44,12 +44,8 @@ def translate_path(container_path: Union[str, os.PathLike], container_workspace:
         raise ValueError(f"Path {container_path} is not under {container_workspace}")
     
     rel_path = container_path[len(container_workspace):].lstrip('/\\')
-    rel_path = rel_path.replace('/', '\\')
     
-    host_workspace = host_workspace.replace('/', '\\')
-    host_path = host_workspace.rstrip('\\') + '\\' + rel_path
-    
-    return host_path
+    return os.path.join(host_workspace, rel_path)
 
 def validate_path(path: Union[str, os.PathLike], container_workspace: str) -> bool:
     """
@@ -146,7 +142,7 @@ def check_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
 
 def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tuple[str, Path]:
     """
-    Write fileclip_<uuid>.json with paths to copy.
+    Write fileclip_request_<uuid>.json with paths to copy.
     Args:
         shared_dir: Directory for fileclip_request_<uuid>.json.
         paths: List of host paths to copy.
@@ -158,7 +154,7 @@ def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tupl
     json_file = shared_dir / f"{FILECLIP_REQUEST_PREFIX}{request_id}.json"
     data = {
         "action": "copy_files",
-        "sender": sender,
+        "sender": f"container_{socket.gethostname()}_{os.getpid()}",
         "request_id": request_id,
         "paths": paths
     }

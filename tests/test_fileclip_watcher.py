@@ -30,7 +30,7 @@ def mock_file_io():
 @pytest.fixture
 def mock_watchdog_observer():
     """Mock watchdog observer and event handler."""
-    with patch("fileclip.fileclip_watcher.Observer") as mock_observer:
+    with patch("fileclip.fileclip_watcher.PollingObserver") as mock_observer:
         mock_observer_instance = MagicMock()
         mock_observer.return_value = mock_observer_instance
         yield mock_observer
@@ -88,14 +88,14 @@ def test_fileclip_handler_init(shared_dir):
     """Test FileclipHandler initialization."""
     handler = FileclipHandler(shared_dir)
     assert handler.shared_dir == shared_dir
-    assert handler.patterns == ["fileclip_*.json"]
+    assert handler.patterns == ["fileclip_request_*.json"]
 
 def test_fileclip_handler_on_created(shared_dir, mock_copy_files):
     """Test FileclipHandler on_created method."""
     handler = FileclipHandler(shared_dir)
     event = MagicMock()
     event.is_directory = False
-    event.src_path = str(shared_dir / "fileclip_test-uuid.json")
+    event.src_path = str(shared_dir / "fileclip_request_test-uuid.json")
     
     with patch("fileclip.fileclip_watcher.process_file") as mock_process:
         handler.on_created(event)
@@ -126,7 +126,7 @@ def test_fileclip_handler_on_created_non_matching(shared_dir):
 # Test process_file
 def test_process_file_ping(shared_dir, mock_file_io):
     """Test process_file with ping action."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     json_data = {
         "action": "ping",
         "sender": "container_test-host_1234",
@@ -147,7 +147,7 @@ def test_process_file_ping(shared_dir, mock_file_io):
 
 def test_process_file_copy_files_valid(shared_dir, temp_files, mock_file_io, mock_copy_files):
     """Test process_file with valid copy_files action."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     json_data = {
         "action": "copy_files",
         "sender": "container_test-host_1234",
@@ -171,7 +171,7 @@ def test_process_file_copy_files_valid(shared_dir, temp_files, mock_file_io, moc
 
 def test_process_file_copy_files_invalid_path(shared_dir, mock_file_io, mock_copy_files):
     """Test process_file with invalid paths."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     json_data = {
         "action": "copy_files",
         "sender": "container_test-host_1234",
@@ -193,7 +193,7 @@ def test_process_file_copy_files_invalid_path(shared_dir, mock_file_io, mock_cop
 
 def test_process_file_copy_files_mixed_paths(shared_dir, temp_files, mock_file_io, mock_copy_files):
     """Test process_file with mixed valid and invalid paths."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     json_data = {
         "action": "copy_files",
         "sender": "container_test-host_1234",
@@ -215,7 +215,7 @@ def test_process_file_copy_files_mixed_paths(shared_dir, temp_files, mock_file_i
 
 def test_process_file_invalid_json(shared_dir, mock_file_io):
     """Test process_file with invalid JSON."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     open_mock, load_mock, dump_mock = mock_file_io
     load_mock.side_effect = json.JSONDecodeError("Invalid JSON", "", 0)
     
@@ -231,7 +231,7 @@ def test_process_file_invalid_json(shared_dir, mock_file_io):
 
 def test_process_file_missing_fields(shared_dir, mock_file_io):
     """Test process_file with missing request_id or sender."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     json_data = {
         "action": "ping"
         # Missing sender and request_id
@@ -249,7 +249,7 @@ def test_process_file_missing_fields(shared_dir, mock_file_io):
 
 def test_process_file_unknown_action(shared_dir, mock_file_io):
     """Test process_file with unknown action."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     json_data = {
         "action": "invalid_action",
         "sender": "container_test-host_1234",
@@ -268,7 +268,7 @@ def test_process_file_unknown_action(shared_dir, mock_file_io):
 
 def test_process_file_copy_files_error(shared_dir, temp_files, mock_file_io, mock_copy_files):
     """Test process_file when copy_files raises an error."""
-    file_path = shared_dir / "fileclip_test-uuid.json"
+    file_path = shared_dir / "fileclip_request_test-uuid.json"
     json_data = {
         "action": "copy_files",
         "sender": "container_test-host_1234",
@@ -337,7 +337,7 @@ def test_main(shared_dir, mock_watchdog_observer, mock_copy_files, monkeypatch, 
     
     with patch("time.sleep", side_effect=[None, KeyboardInterrupt]):
         main()
-        assert mock_observer.called
+        assert mock_observer.called, "PollingObserver was not instantiated"
         assert mock_observer_instance.schedule.call_args[0][0].__class__ == FileclipHandler
         assert mock_observer_instance.schedule.call_args[0][1] == str(shared_dir)
         assert mock_observer_instance.schedule.call_args[1]["recursive"] is False
@@ -358,9 +358,10 @@ def test_main_invalid_log_level(shared_dir, mock_watchdog_observer, mock_copy_fi
     monkeypatch.setenv("FILECLIP_HOST_WORKSPACE", str(shared_dir.parent))
     
     mock_observer = mock_watchdog_observer
-    mock_observer.start.return_value = None
-    mock_observer.stop.return_value = None
-    mock_observer.join.return_value = None
+    mock_observer_instance = mock_observer.return_value
+    mock_observer_instance.start.return_value = None
+    mock_observer_instance.stop.return_value = None
+    mock_observer_instance.join.return_value = None
     
     with pytest.raises(SystemExit) as exc_info:
         main()

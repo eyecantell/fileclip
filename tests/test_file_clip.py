@@ -114,7 +114,17 @@ def test_translate_path(mock_env):
     env = mock_env
     container_path = f"{env['container_workspace']}/test.txt"
     result = translate_path(container_path, env['container_workspace'], env['host_workspace'])
-    assert result == f"{env['host_workspace']}/test.txt".replace('/', os.sep)
+    assert result == os.path.join(env['host_workspace'], "test.txt")
+
+def test_translate_path_windows_host(tmp_path):
+    """Test path translation with a Windows-style host workspace path."""
+    container_workspace = str(tmp_path / "container_workspace")
+    host_workspace = r"C:\Users\eyeca\dev"
+    container_path = f"{container_workspace}/test.txt"
+    result = translate_path(container_path, container_workspace, host_workspace)
+    expected = r"C:\Users\eyeca\dev\test.txt"
+    # Normalize paths to forward slashes for comparison
+    assert result.replace('\\', '/') == expected.replace('\\', '/')
 
 def test_translate_path_invalid(mock_env):
     """Test path translation with invalid container path."""
@@ -132,7 +142,7 @@ def test_validate_path(mock_env):
 
 # Test write_fileclip_json
 def test_write_fileclip_json(tmp_path):
-    """Test writing fileclip_<uuid>.json."""
+    """Test writing fileclip_request_<uuid>.json."""
     shared_dir = tmp_path / ".fileclip"
     shared_dir.mkdir(parents=True, exist_ok=True)
     paths = [r"C:\host\path\test.txt"]
@@ -152,7 +162,7 @@ def test_check_watcher_no_response(tmp_path):
     shared_dir = tmp_path / ".fileclip"
     shared_dir.mkdir(parents=True, exist_ok=True)
     assert not check_watcher(shared_dir, timeout=0.1)
-    assert not list(shared_dir.glob("fileclip_*.json"))
+    assert not list(shared_dir.glob("fileclip_request_*.json"))
 
 # Test wait_for_results with timeout
 def test_wait_for_results_timeout(tmp_path, mock_watchdog_observer):
@@ -463,7 +473,7 @@ def test_copy_files_with_watcher(temp_files, mock_container, mock_env, mock_file
         with patch("fileclip.file_clip.wait_for_results", return_value={"success": True, "message": "Copied 3 files"}):
             result = copy_files(temp_files, use_watcher=True)
             assert result is True
-            dump_mock.assert_called()  # JSON dump for fileclip_<uuid>.json
+            dump_mock.assert_called()  # JSON dump for fileclip_request_<uuid>.json
             load_mock.assert_not_called()  # Since wait_for_results is mocked, load is not called in test
             mock_subprocess_run.assert_not_called()  # No fallback to direct copy
 
@@ -481,7 +491,7 @@ def test_copy_files_watcher_failure(temp_files, mock_container, mock_env, mock_s
         with patch("fileclip.file_clip.wait_for_results", return_value={"success": False, "message": "Watcher error"}):
             result = copy_files(temp_files, use_watcher=True)
             assert result is True  # Fallback succeeds
-            dump_mock.assert_called()  # JSON dump for fileclip_<uuid>.json
+            dump_mock.assert_called()  # JSON dump for fileclip_request_<uuid>.json
             load_mock.assert_not_called()  # Since wait_for_results is mocked, load is not called in test
             mock_subprocess_run.assert_called()  # Fallback called _copy_files_direct
 
