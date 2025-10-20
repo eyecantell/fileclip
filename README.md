@@ -11,7 +11,7 @@ Fileclip is a command-line tool for copying file references to the system clipbo
 ## Features
 
 - **Cross-Platform**: Supports Windows, macOS, and Linux (including WSL and containers).
-- **File and Directory Support**: Copies references to individual files or all files within directories (non-recursive).
+- **File and Directory Support**: Copies references to individual files or all files within directories (recursive).
 - **Clipboard Integration**: Uses native clipboard commands for file references or URIs.
 - **WSL/Container Fallback**: Copies `file://` URIs as text to the Windows clipboard for Windows applications.
 - **Container Support**: Communicates with a Windows host `fileclip-watcher` to copy native Windows file paths.
@@ -40,13 +40,15 @@ Fileclip is built with Python and managed using [PDM](https://pdm-project.org/).
    ```
 
 4. **Container Setup (Optional)**:
-   For VS Code containers, add a mount to `devcontainer.json`:
+   For VS Code containers, ensure your workspace is bind-mounted (e.g., via `devcontainer.json`). The tool uses `$FILECLIP_CONTAINER_WORKSPACE/.fileclip` for communication, which is shared via the workspace mount. No additional mount is required unless you want to avoid placing `.fileclip` in your workspace root.
+   
+   Alternative (to avoid workspace clutter): Add a separate mount to `devcontainer.json` and adjust env vars:
    ```json
    "mounts": [
        "source=C:/Temp/fileclip,target=/tmp/fileclip,type=bind"
    ]
    ```
-   On the Windows host, run `fileclip-watcher` (see [Container Support](#container-support)).
+   Then set `"FILECLIP_CONTAINER_WORKSPACE": "/tmp/fileclip"` and `"FILECLIP_HOST_WORKSPACE": "C:\\Temp\\fileclip"`. Note: Path translation for files outside this dir won't work—use only for non-workspace files.
 
 ## Usage
 
@@ -58,7 +60,7 @@ pdm run fileclip path/to/file1.txt path/to/dir
 ```
 
 - **Files**: Copies references to specified files.
-- **Directories**: Copies references to all files directly within the directory (non-recursive).
+- **Directories**: Copies references to all files within the directory and subdirectories (recursive).
 - **Output**: Confirms files copied or provides `file://` URIs if clipboard operations fail.
 
 ### Examples
@@ -75,7 +77,7 @@ pdm run fileclip path/to/file1.txt path/to/dir
   Files copied to clipboard (Wayland).
   ```
 
-- Copy files from a directory:
+- Copy files from a directory (includes subdirectories):
   ```bash
   pdm run fileclip test_dir
   ```
@@ -94,7 +96,7 @@ Run `fileclip-watcher` on a Windows host to monitor for container file copy requ
 pdm run fileclip-watcher --log-level=DEBUG
 ```
 
-Monitors `FILECLIP_HOST_WORKSPACE/.fileclip` (default: `C:\Temp\fileclip\.fileclip`). Set the environment variable if needed:
+Monitors `$FILECLIP_HOST_WORKSPACE/.fileclip` (default: `C:\Temp\fileclip`). Set the environment variable if needed:
 ```powershell
 set FILECLIP_HOST_WORKSPACE=C:\path\to\workspace
 pdm run fileclip-watcher --log-level=DEBUG
@@ -158,34 +160,32 @@ For VS Code containers, `fileclip` uses `fileclip-watcher` on the Windows host t
      ```
 
 2. **Container Configuration**:
-   - Add to `devcontainer.json`:
-     ```json
-     "mounts": [
-         "source=C:/Temp/fileclip,target=/tmp/fileclip,type=bind"
-     ]
-     ```
-   - Set environment variables (optional):
+   - Ensure your workspace is bind-mounted in `devcontainer.json` (e.g., from host `C:\Users\user\dev` to container `/mounted/dev`).
+   - Set environment variables:
      ```json
      "containerEnv": {
-         "FILECLIP_HOST_WORKSPACE": "C:\\path\\to\\workspace",
-         "FILECLIP_CONTAINER_WORKSPACE": "/workspaces/project"
+         "FILECLIP_HOST_WORKSPACE": "C:\\Users\\user\\dev",
+         "FILECLIP_CONTAINER_WORKSPACE": "/mounted/dev",
+         "FILECLIP_USE_WATCHER": "true"
      }
      ```
+   - The shared directory will be `$FILECLIP_CONTAINER_WORKSPACE/.fileclip` (created automatically).
 
 3. **Usage in Container**:
    - Run:
      ```bash
-     pdm run fileclip /workspaces/project/test.txt
+     pdm run fileclip /mounted/dev/test.txt
      ```
-   - Translates paths to host paths, writes to `/tmp/fileclip/fileclip_<uuid>.json`, and the watcher copies to the Windows clipboard.
+   - Translates paths to host paths, writes to `$FILECLIP_CONTAINER_WORKSPACE/.fileclip/fileclip_request_<uuid>.json`, and the watcher copies to the Windows clipboard.
    - If the watcher isn’t running:
      ```
      Host service not detected. Copied file:// URIs to clipboard as text.
      ```
 
 ### Notes
-- Ensure `C:\Temp\fileclip` exists on the host.
+- Ensure your workspace mount shares the directory between host and container.
 - Path translation requires correct `FILECLIP_HOST_WORKSPACE` and `FILECLIP_CONTAINER_WORKSPACE`.
+- The `.fileclip` directory contains logs (`fileclip_watcher.log`) and temporary JSON files.
 
 ## Troubleshooting
 
@@ -218,16 +218,16 @@ For VS Code containers, `fileclip` uses `fileclip-watcher` on the Windows host t
   - Verify `fileclip-watcher` is running.
   - Check shared directory:
     ```bash
-    ls -l /tmp/fileclip
+    ls -l $FILECLIP_CONTAINER_WORKSPACE/.fileclip
     ```
-  - Inspect `/tmp/fileclip/fileclip_*.json`.
+  - Inspect `$FILECLIP_CONTAINER_WORKSPACE/.fileclip/fileclip_request_*.json`.
 
 - **Timeouts**:
   - Increase timeout in `file_clip.py` (e.g., `timeout=10`).
 
 ## Limitations
 
-- Performance may degrade with large directories.
+- Performance may degrade with very large directories (due to recursive scanning).
 - WSL/containers may fall back to text URIs.
 
 ## Development
@@ -236,7 +236,6 @@ For VS Code containers, `fileclip` uses `fileclip-watcher` on the Windows host t
   ```bash
   pdm run pytest -v --cov=src/fileclip --cov-report=term
   ```
-  Expected: 56 tests (50 pass, 6 skipped on non-Linux platforms).
 
 - **Project Structure**:
   ```
@@ -270,7 +269,6 @@ For VS Code containers, `fileclip` uses `fileclip-watcher` on the Windows host t
 ## Future Enhancements
 
 - Add `--include`/`--exclude` flags.
-- Support recursive directory copying.
 - Enhance CI with container testing.
 - Explore HTTP-based host communication.
 
