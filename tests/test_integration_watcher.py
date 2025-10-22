@@ -71,7 +71,7 @@ def run_watcher(setup_dirs):
         watcher_thread = threading.Thread(target=watcher_main)
         watcher_thread.daemon = True
         watcher_thread.start()
-        time.sleep(10)  # Increased for container filesystem
+        time.sleep(15)  # Increased for macOS CI reliability
         yield
         # No explicit stop needed; daemon thread exits with pytest
 
@@ -82,11 +82,13 @@ def test_watcher_integration(setup_dirs, mock_direct_copy, mock_env, mock_is_con
     caplog.set_level(logging.DEBUG, logger="fileclip.file_clip")
     
     # Simulate running `pdm run fileclip test.txt --use-watcher --watcher-timeout 20`
-    with patch("sys.argv", ["fileclip", str(setup_dirs["test_file"]), "--use-watcher", "--watcher-timeout", "20"]):
+    with patch("sys.argv", ["fileclip", str(setup_dirs["test_file"]), "--use-watcher", "--watcher-timeout", "30"]):
         fileclip_main()
+        # Force filesystem sync to ensure request file is written
+        os.sync()
     
     # Wait for watcher to process
-    time.sleep(12)  # Increased for CI/container reliability
+    time.sleep(20)  # Increased for CI reliability
     
     # Check for request JSON (should be deleted by watcher)
     request_files = list((setup_dirs["container_dir"] / ".fileclip").glob("fileclip_request_*.json"))
@@ -108,7 +110,7 @@ def test_watcher_integration(setup_dirs, mock_direct_copy, mock_env, mock_is_con
     
     # Verify _copy_files_direct was called with the correct path
     print(f"Mock direct copy call args: {mock_direct_copy.call_args}")
-    mock_direct_copy.assert_called_once_with([str(setup_dirs["host_test_file"])])  # Use dynamic path
+    mock_direct_copy.assert_called_once_with([str(setup_dirs["host_test_file"])])
 
 # Test with invalid file
 def test_watcher_invalid_file(setup_dirs, mock_direct_copy, mock_env, mock_is_container, mock_check_watcher, run_watcher, caplog):
@@ -122,7 +124,7 @@ def test_watcher_invalid_file(setup_dirs, mock_direct_copy, mock_env, mock_is_co
             fileclip_main()
     
     # Wait for watcher (shouldn't process due to early failure)
-    time.sleep(5)
+    time.sleep(10)  # Increased for CI reliability
     
     # Check watcher log (no copy should occur)
     log_file = setup_dirs["host_dir"] / ".fileclip" / "fileclip_watcher.log"

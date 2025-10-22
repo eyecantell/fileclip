@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  unit-tests:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -37,11 +37,57 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: sudo apt-get update && sudo apt-get install -y wl-clipboard xclip
 
-    - name: Run tests
-      run: pdm run pytest -v --cov=src/fileclip --cov-report=term --cov-report=html
+    - name: Run unit tests
+      run: pdm run pytest -v --cov=src/fileclip --cov-report=term --cov-report=html -k "not test_integration_watcher"
 
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
-        name: coverage-report-${{ matrix.os }}-python-${{ matrix.python-version }}
+        name: coverage-report-unit-${{ matrix.os }}-python-${{ matrix.python-version }}
+        path: htmlcov/
+
+  integration:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install PDM
+      run: pip install pdm
+
+    - name: Install dependencies
+      run: pdm install -G test -G dev
+
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: sudo apt-get update && sudo apt-get install -y wl-clipboard xclip
+
+    - name: Run integration tests
+      run: pdm run pytest tests/test_integration_watcher.py -v --log-cli-level=DEBUG
+
+    - name: Debug: List .fileclip directory (macOS)
+      if: matrix.os == 'macos-latest' && always()
+      run: |
+        find /private/var/folders -type d -name ".fileclip" -exec ls -la {} \; || true
+
+    - name: Upload watcher log (macOS)
+      if: matrix.os == 'macos-latest' && always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: watcher-log-macos-python-${{ matrix.python-version }}
+        path: /private/var/folders/*/*/*/*/*/.fileclip/fileclip_watcher.log
+
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report-integration-${{ matrix.os }}-python-${{ matrix.python-version }}
         path: htmlcov/
