@@ -91,7 +91,7 @@ def wait_for_results(shared_dir: Path, request_id: str, timeout: float = 15.0) -
     results_path = shared_dir / f"{FILECLIP_RESULTS_PREFIX}{request_id}.json"
     results = {"found": False}
     handler = ResultsHandler(results_path, results)
-    observer = Observer()
+    observer = Observer(timeout=.1)
     observer.schedule(handler, str(shared_dir), recursive=False)
     observer.start()
     

@@ -180,7 +180,7 @@ def main():
     setup_logging(log_file, args.log_level)
     logger.info(f"Starting fileclip-watcher, monitoring {shared_dir}")
 
-    observer = PollingObserver()
+    observer = PollingObserver(timeout=.1)
     observer.schedule(FileclipHandler(shared_dir), str(shared_dir), recursive=False)
     observer.start()
     logger.debug("PollingObserver started")
