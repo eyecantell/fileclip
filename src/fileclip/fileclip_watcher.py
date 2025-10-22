@@ -32,6 +32,7 @@ def setup_logging(log_file: Path, log_level: str):
     handler.setLevel(level)
     handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
+    logger.debug(f"Logging initialized with level {log_level} to {log_file}")
 
 def write_result(shared_dir: Path, request_id: str, result: dict):
     """
@@ -56,6 +57,7 @@ def process_file(file_path: Path, shared_dir: Path):
         file_path: Path to the JSON file.
         shared_dir: Directory for results.
     """
+    logger.debug(f"Starting to process file: {file_path}")
     result = {
         "success": False,
         "message": "",
@@ -65,9 +67,9 @@ def process_file(file_path: Path, shared_dir: Path):
     }
 
     try:
-        logger.info(f"Processing file: {file_path}")
         with open(file_path, "r") as f:
             data = json.load(f)
+        logger.debug(f"Successfully read JSON from {file_path}: {data}")
     except json.JSONDecodeError:
         logger.error(f"Invalid JSON in {file_path}")
         result["message"] = "Invalid JSON"
@@ -109,6 +111,7 @@ def process_file(file_path: Path, shared_dir: Path):
                 logger.error(f"Invalid path: {path}")
         if valid_paths:
             try:
+                logger.debug(f"Calling copy_files with paths: {valid_paths}")
                 success = copy_files(valid_paths, use_watcher=False)
                 result["success"] = success
                 result["message"] = f"Copied {len(valid_paths)} file(s)" if success else "Failed to copy files"
@@ -129,6 +132,7 @@ def process_file(file_path: Path, shared_dir: Path):
         write_result(shared_dir, result["request_id"], result)
 
     file_path.unlink(missing_ok=True)
+    logger.debug(f"Finished processing file: {file_path}")
 
 class FileclipHandler(PatternMatchingEventHandler):
     """
@@ -140,6 +144,7 @@ class FileclipHandler(PatternMatchingEventHandler):
     def __init__(self, shared_dir: Path):
         super().__init__(patterns=[f"{FILECLIP_REQUEST_PREFIX}*.json"], ignore_directories=True)
         self.shared_dir = shared_dir
+        logger.debug(f"Initialized FileclipHandler for {shared_dir}")
 
     def on_created(self, event):
         """
@@ -147,12 +152,15 @@ class FileclipHandler(PatternMatchingEventHandler):
         Args:
             event: Watchdog event object.
         """
+        logger.debug(f"Received watchdog event: {event}")
         if event.is_directory:
             return
         file_path = Path(event.src_path)
         if file_path.name.startswith(FILECLIP_REQUEST_PREFIX) and file_path.suffix == ".json":
-            logger.debug(f"Detected new file: {file_path}")
+            logger.debug(f"Detected new request file: {file_path}")
             process_file(file_path, self.shared_dir)
+        else:
+            logger.debug(f"Ignored file: {file_path}")
 
 def main():
     """Main function to run the fileclip watcher."""
@@ -175,6 +183,7 @@ def main():
     observer = PollingObserver()
     observer.schedule(FileclipHandler(shared_dir), str(shared_dir), recursive=False)
     observer.start()
+    logger.debug("PollingObserver started")
 
     try:
         while True:

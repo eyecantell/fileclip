@@ -5,6 +5,7 @@ import json
 import uuid
 import time
 import socket
+import logging
 from pathlib import Path
 from typing import List, Union
 from watchdog.events import FileSystemEventHandler
@@ -12,6 +13,9 @@ from watchdog.observers.polling import PollingObserver as Observer
 
 FILECLIP_REQUEST_PREFIX = "fileclip_request_"
 FILECLIP_RESULTS_PREFIX = "fileclip_results_"
+
+# Set up logger
+logger = logging.getLogger("fileclip.file_clip")
 
 def is_container() -> bool:
     """
@@ -71,9 +75,10 @@ class ResultsHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if not event.is_directory and Path(event.src_path).name == self.results_path.name:
+            logger.debug(f"ResultsHandler detected result file: {event.src_path}")
             self.results["found"] = True
 
-def wait_for_results(shared_dir: Path, request_id: str, timeout: float = 10.0) -> dict:
+def wait_for_results(shared_dir: Path, request_id: str, timeout: float = 15.0) -> dict:
     """
     Wait for fileclip_results_<uuid>.json using watchdog.
     Args:
@@ -96,20 +101,22 @@ def wait_for_results(shared_dir: Path, request_id: str, timeout: float = 10.0) -
             try:
                 with open(results_path, "r") as f:
                     data = json.load(f)
-                print(f"Removing results file {results_path}")
+                logger.debug(f"Removing results file {results_path}")
                 results_path.unlink(missing_ok=True)  # Delete after reading
                 observer.stop()
                 observer.join()
                 return data
-            except (json.JSONDecodeError, OSError):
+            except (json.JSONDecodeError, OSError) as e:
+                logger.error(f"Error reading results file {results_path}: {e}")
                 pass
         time.sleep(0.1)
     
     observer.stop()
     observer.join()
+    logger.debug(f"Timeout waiting for results file {results_path} after {timeout}s")
     return {"success": False, "message": f"Timeout waiting for results after {timeout}s"}
 
-def check_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
+def check_watcher(shared_dir: Path, timeout: float = 15.0) -> bool:
     """
     Test if the watcher is running by writing a ping file.
     Args:
@@ -125,6 +132,7 @@ def check_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
         "sender": f"container_{socket.gethostname()}_{os.getpid()}",
         "request_id": request_id
     }
+    logger.debug(f"Checking watcher: writing ping file {ping_file}")
     try:
         shared_dir.mkdir(parents=True, exist_ok=True)
         with open(ping_file, "w") as f:
@@ -132,13 +140,17 @@ def check_watcher(shared_dir: Path, timeout: float = 5.0) -> bool:
         start_time = time.time()
         while time.time() - start_time < timeout:
             if not ping_file.exists():
+                logger.debug(f"Watcher responded: ping file {ping_file} deleted")
                 return True
             time.sleep(0.1)
+        logger.debug(f"Watcher check timed out after {timeout}s: ping file {ping_file} still exists")
         return False
-    except OSError:
+    except OSError as e:
+        logger.error(f"Error writing ping file {ping_file}: {e}")
         return False
     finally:
         ping_file.unlink(missing_ok=True)
+        logger.debug(f"Cleaned up ping file {ping_file}")
 
 def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tuple[str, Path]:
     """
@@ -161,9 +173,10 @@ def write_fileclip_json(shared_dir: Path, paths: List[str], sender: str) -> tupl
     shared_dir.mkdir(parents=True, exist_ok=True)
     with open(json_file, "w") as f:
         json.dump(data, f)
+    logger.debug(f"Wrote fileclip request: {json_file}")
     return request_id, json_file
 
-def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = None, watcher_timeout: float = 10.0) -> bool:
+def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = None, watcher_timeout: float = 15.0) -> bool:
     """
     Copy a list of file paths to the system clipboard as file references.
     Args:
@@ -209,7 +222,9 @@ def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = No
             translated_paths.append(translate_path(path, container_workspace, host_workspace))
         
         # Test watcher
-        if not check_watcher(shared_dir):
+        logger.debug("Testing watcher availability")
+        if not check_watcher(shared_dir, timeout=15.0):
+            logger.warning("Watcher not running; falling back to direct copy")
             print("Warning: Watcher not running; files may not copy to host clipboard. See README for setup.")
             return _copy_files_direct(valid_paths)  # Fallback to direct copy
         
@@ -218,6 +233,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = No
         request_id, json_file = write_fileclip_json(shared_dir, translated_paths, sender)
         
         # Wait for results
+        logger.debug(f"Waiting for watcher results for request {request_id}")
         results = wait_for_results(shared_dir, request_id, watcher_timeout)
         if results.get("success", False):
             print(f"Files copied to clipboard via watcher: {results.get('message', '')}")
@@ -226,6 +242,7 @@ def copy_files(file_paths: List[Union[str, os.PathLike]], use_watcher: bool = No
             print(f"Watcher failed: {results.get('message', 'Unknown error')}")
             for error in results.get("errors", []):
                 print(f"Error: {error}")
+            logger.warning("Watcher copy failed; falling back to direct copy")
             return _copy_files_direct(valid_paths)  # Fallback to direct copy
 
     return _copy_files_direct(valid_paths)
