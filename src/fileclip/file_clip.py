@@ -263,15 +263,67 @@ def _copy_files_direct(file_paths: List[str]) -> bool:
         return True
 
     elif sys.platform == "darwin":  # macOS
-        files = ', '.join(f'POSIX file "{p}"' for p in file_paths)
-        cmd = f'osascript -e \'tell app "Finder" to set the clipboard to {{{files}}}\''
-        print(f"Executing macOS command: {cmd}")
+        import textwrap
+
+        applescript = textwrap.dedent('''
+        use framework "AppKit"
+
+        property this : a reference to current application
+        property NSFileManager : a reference to NSFileManager of this
+        property NSMutableArray : a reference to NSMutableArray of this
+        property NSPasteboard : a reference to NSPasteboard of this
+        property NSString : a reference to NSString of this
+        property NSURL : a reference to NSURL of this
+
+        property pb : missing value
+
+        on run input
+            init()
+            clearClipboard()
+            addToClipboard(input)
+        end run
+
+        to init()
+            set pb to NSPasteboard's generalPasteboard()
+        end init
+
+        to clearClipboard()
+            if pb = missing value then init()
+            pb's clearContents()
+        end clearClipboard
+
+        to addToClipboard(fs)
+            local fs
+
+            set fURLs to NSMutableArray's array()
+            set FileManager to NSFileManager's defaultManager()
+
+            repeat with f in fs
+                set fp to (NSString's stringWithString:f)'s stringByStandardizingPath()
+                if (FileManager's fileExistsAtPath:fp) then ¬
+                    (fURLs's addObject:(NSURL's fileURLWithPath:fp))
+            end repeat
+
+            if pb = missing value then init()
+            pb's writeObjects:fURLs
+        end addToClipboard
+        '''.strip())
+
+        cmd = ["osascript", "-e", applescript] + file_paths
+        print(f"Executing macOS clipboard command (AppKit method) with {len(file_paths)} files.")
+
         try:
             subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=5, check=True, env=os.environ.copy()
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=8,
+                check=True,
+                env=os.environ.copy(),
             )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"macOS clipboard error: {e.stderr}")
+            raise RuntimeError(f"AppleScript failed: {e.stderr.strip()}") from e
+
         print("Files copied to clipboard (macOS).")
         return True
 
