@@ -9,7 +9,7 @@
 Fileclip is a command-line tool for copying file references to the system clipboard, enabling seamless file copy/paste operations across Windows, macOS, and Linux (including WSL and containers). It supports copying multiple files or directories for pasting into file managers (e.g., Windows File Explorer, Nautilus, Dolphin) or applications supporting file references. A Windows host watcher service enables copying files from containers to the Windows clipboard.
 
 ## Todo
-- Change PollingObserver to use Observer first, then if it fails fall back to pollingObserver
+- Change PollingObserver to use Observer first, then if it fails fall back to pollingObserver (see todo.md)
 - Test basic copy/paste on Linux
 
 ## Features
